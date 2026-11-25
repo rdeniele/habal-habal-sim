@@ -19,6 +19,7 @@ const PITCH_MAX := 0.35
 
 var target: Node3D
 var follow_heading := false   # auto-rotate behind the motor
+var ui_open := false          # a clickable menu is open: don't grab the mouse on click
 var camera: Camera3D
 
 var _yaw := 0.0
@@ -71,7 +72,7 @@ func get_yaw() -> float:
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Click the game window to lock the mouse. Esc frees it (pause menu comes in Milestone 4).
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseButton and event.pressed and not ui_open and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()
 		return

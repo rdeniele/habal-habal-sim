@@ -7,6 +7,7 @@ extends CharacterBody3D
 
 signal crashed(impact_speed: float, wall_normal: Vector3)
 signal ran_out_of_fuel
+signal bumped(impact_speed: float)   # small hit that doesn't throw you off
 
 const GRAVITY := 22.0
 const BRAKE_DECEL := 14.0        # m/s^2 with full brake
@@ -18,6 +19,8 @@ const CRASH_SPEED := 8.5         # m/s (~30 km/h) head-on hit that throws you of
 const MAX_LEAN := 0.5            # radians (~29 degrees)
 const WHEEL_RADIUS := 0.27
 const MIX_RATE := 22050.0        # placeholder engine/horn sound sample rate
+const PUSH_SPEED := 1.6          # m/s when pushing the motor with no gas
+const PASSENGER_SEAT := Vector3(0, 0.02, 0.6)
 
 var motor_id: String = ""
 var stats: Dictionary = {}
@@ -29,6 +32,8 @@ var is_ridden := false
 var is_fallen := false
 var throttle_input := 0.0
 var steer_input := 0.0
+var last_accel := 0.0     # m/s^2 this frame (negative = braking), for passenger comfort
+var passenger: Node3D = null
 
 var _lean_pivot: Node3D
 var _fork: Node3D
@@ -37,6 +42,7 @@ var _rear_wheel: Node3D
 var _rider: CharacterModel
 var _paint: StandardMaterial3D
 var _crash_cooldown := 0.0
+var _bump_cooldown := 0.0
 
 var _audio: AudioStreamPlayer3D
 var _playback: AudioStreamGeneratorPlayback
@@ -97,6 +103,39 @@ func fall_over() -> void:
 	is_fallen = true
 
 
+## Add gas. Returns how many liters actually fit.
+func refuel(liters: float) -> float:
+	var tank: float = stats["tank_liters"]
+	var added := clampf(liters, 0.0, tank - fuel_liters)
+	fuel_liters += added
+	return added
+
+
+func get_tank_liters() -> float:
+	return float(stats["tank_liters"])
+
+
+func is_out_of_fuel() -> bool:
+	return fuel_liters <= 0.0
+
+
+# --- Passenger ---------------------------------------------------------------
+
+## The node passengers sit on (so they lean with the motor).
+func get_seat_mount() -> Node3D:
+	return _lean_pivot
+
+
+func attach_passenger(p: Node3D) -> void:
+	passenger = p
+
+
+func detach_passenger() -> Node3D:
+	var p := passenger
+	passenger = null
+	return p
+
+
 # --- Getters for HUD and other systems ---------------------------------------
 
 func get_top_speed() -> float:
@@ -124,6 +163,7 @@ func get_forward() -> Vector3:
 
 func _physics_process(delta: float) -> void:
 	_crash_cooldown = maxf(0.0, _crash_cooldown - delta)
+	_bump_cooldown = maxf(0.0, _bump_cooldown - delta)
 
 	var throttle := 0.0
 	var brake := 0.0
@@ -134,9 +174,11 @@ func _physics_process(delta: float) -> void:
 		brake = Input.get_action_strength("brake")
 		steer = Input.get_axis("steer_right", "steer_left")   # left = positive
 		handbrake = Input.is_action_pressed("handbrake")
+	var pushing := fuel_liters <= 0.0 and throttle > 0.0
 	if fuel_liters <= 0.0:
 		throttle = 0.0
 	throttle_input = throttle
+	var start_speed := speed
 	steer_input = steer
 
 	var top := get_top_speed()
@@ -155,12 +197,16 @@ func _physics_process(delta: float) -> void:
 			speed = move_toward(speed, 0.0, BRAKE_DECEL * brake * delta)
 		else:
 			speed = move_toward(speed, -REVERSE_MAX, 3.0 * brake * delta)
-	if throttle == 0.0 and brake == 0.0:
+	if pushing:
+		# No gas: you can only push it at walking speed ("tulod anay!")
+		speed = move_toward(speed, PUSH_SPEED, 2.0 * delta)
+	elif throttle == 0.0 and brake == 0.0:
 		speed = move_toward(speed, 0.0, ROLL_DRAG * delta)
 	if handbrake:
 		speed = move_toward(speed, 0.0, HANDBRAKE_DECEL * delta)
 	if is_fallen:
 		speed = move_toward(speed, 0.0, 20.0 * delta)
+	last_accel = (speed - start_speed) / delta
 
 	# Steering: needs some speed to turn, and turns wider when going fast.
 	var abs_speed := absf(speed)
@@ -207,8 +253,10 @@ func _handle_collisions(forward: Vector3, pre_speed: float) -> void:
 			damage = minf(100.0, damage + impact * 1.5)
 			crashed.emit(impact, Vector3(n.x, 0.0, n.z).normalized())
 			return
-		elif impact > 3.0:
+		elif impact > 3.0 and _bump_cooldown <= 0.0:
+			_bump_cooldown = 0.6
 			damage = minf(100.0, damage + impact * 0.2)
+			bumped.emit(impact)
 
 
 func _use_fuel(meters: float) -> void:

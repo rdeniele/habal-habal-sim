@@ -45,8 +45,20 @@ const POLE_COLOR := Color("#8a8a80")
 const WIRE_COLOR := Color("#1a1a1a")
 const TRUNK_COLOR := Color("#7a5230")
 
+## Street names for the test grid (real Bacolod names, placed randomly for now).
+const NS_STREETS := ["Yakal St.", "Mabini St.", "Lacson St.", "Araneta St.", "Gatuslao St.",
+	"Hernaez St.", "Rizal St.", "Locsin St.", "Burgos Ave."]
+const EW_STREETS := ["Libertad St.", "Luzuriaga St.", "Gonzaga St.", "San Juan St.", "Galo St.",
+	"Lopez Jaena St.", "Rosario St.", "6th St.", "Circumferential Rd."]
+## What kind of spot a passenger waits at.
+const SPOT_KINDS := ["Sari-sari store", "Carinderia", "Bakery", "School gate", "Barangay hall",
+	"Apartment", "Chapel", "Waiting shed", "Pharmacy", "Internet cafe", "Lechon manok stall",
+	"Boarding house", "Vulcanizing shop", "Piaya store"]
+
 ## Filled while building: [{id, name, door: Vector3, front_z: float}]
 var places: Array[Dictionary] = []
+## Pickup/drop-off spots on sidewalks: [{pos, road_dir, street, label}]
+var address_points: Array[Dictionary] = []
 
 var _rng := RandomNumberGenerator.new()
 var _collision: StaticBody3D
@@ -68,6 +80,7 @@ func _ready() -> void:
 	_build_boundary()
 	_build_backdrop()
 	_flush_multimeshes()
+	_build_address_points()
 
 
 # --- Public API --------------------------------------------------------------
@@ -90,6 +103,54 @@ func get_spawn() -> Dictionary:
 		"motor_heading": -PI * 0.5,   # facing east along the street
 		"camera_yaw": -PI * 0.5,      # camera looks east too
 	}
+
+
+## Name of the street at a road line. ns = north-south road.
+func get_street_name(index: int, ns: bool) -> String:
+	return NS_STREETS[index] if ns else EW_STREETS[index]
+
+
+# --- Addresses (for bookings) ------------------------------------------------
+
+## Two spots per block side on every road, on the sidewalk, facing the road.
+func _build_address_points() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = CITY_SEED + 7
+	var side_off := ROAD_W * 0.5 + 1.6
+	for i in N + 1:
+		var c := -HALF + CELL * i
+		for b in N:
+			var bc := -HALF + CELL * (b + 0.5)
+			for side: float in [-1.0, 1.0]:
+				# Outer roads only have blocks on the inner side.
+				if (i == 0 and side < 0.0) or (i == N and side > 0.0):
+					continue
+				var along := bc + rng.randf_range(-9.0, 9.0)
+				var kind: String = SPOT_KINDS[rng.randi() % SPOT_KINDS.size()]
+				address_points.append({
+					"pos": Vector3(c + side * side_off, 0, along),
+					"road_dir": Vector3(-side, 0, 0),
+					"street": NS_STREETS[i],
+					"label": "%s, %s" % [kind, NS_STREETS[i]],
+				})
+				along = bc + rng.randf_range(-9.0, 9.0)
+				kind = SPOT_KINDS[rng.randi() % SPOT_KINDS.size()]
+				address_points.append({
+					"pos": Vector3(along, 0, c + side * side_off),
+					"road_dir": Vector3(0, 0, -side),
+					"street": EW_STREETS[i],
+					"label": "%s, %s" % [kind, EW_STREETS[i]],
+				})
+	# Named places (clinic, motor shop...) are also destinations.
+	for p in places:
+		if p["id"] == "home":
+			continue
+		var fz: float = p["front_z"]
+		var door: Vector3 = p["door"]
+		address_points.append({
+			"pos": door, "road_dir": Vector3(0, 0, fz),
+			"street": "", "label": str(p["name"]),
+		})
 
 
 # --- Environment -------------------------------------------------------------

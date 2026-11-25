@@ -64,6 +64,13 @@ func _enter_tree() -> void:
 	_keys("pause", [KEY_ESCAPE])
 	_buttons("pause", [JOY_BUTTON_START])
 	_keys("toggle_help", [KEY_F1])
+	# Quick choices: accept/decline bookings, gas amounts
+	_keys("option_1", [KEY_1])
+	_buttons("option_1", [JOY_BUTTON_DPAD_UP])
+	_keys("option_2", [KEY_2])
+	_buttons("option_2", [JOY_BUTTON_DPAD_DOWN])
+	_keys("option_3", [KEY_3])
+	_buttons("option_3", [JOY_BUTTON_DPAD_LEFT])
 
 	# --- Debug (handy while building the game) ---
 	_keys("debug_respawn", [KEY_F8])

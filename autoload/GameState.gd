@@ -5,17 +5,54 @@ extends Node
 
 signal money_changed(new_amount: int)
 
+const RATING_HISTORY := 30   # average rating uses the last N rides
+
 var money: int = Economy.STARTING_MONEY
 var day: int = 1
 var time_hours: float = Economy.DAY_START_HOUR   # 0.0 - 24.0
 var current_motor_id: String = Motors.DEFAULT_MOTOR_ID
-var rating: float = 5.0
 var respect: int = 0
+
+## Star ratings from passengers (newest last). Starts with a few 5s so you begin at 5.0.
+var ratings: Array[int] = [5, 5, 5, 5, 5]
+var rating: float = 5.0
+
+## Passenger language: "hil" Hiligaynon, "ceb" Bisaya, "tl" Tagalog, "en" English, "mixed"
+var passenger_language: String = "mixed"
+
+## Today's numbers, shown on the End of Day screen (Milestone 4).
+var today: Dictionary = {}
+
+
+func _ready() -> void:
+	reset_today()
+
+
+func reset_today() -> void:
+	today = {"rides": 0, "fares": 0, "tips": 0, "gas_spent": 0, "cancelled": 0}
 
 
 func add_money(amount: int) -> void:
 	money += amount
 	money_changed.emit(money)
+
+
+## Pay for something. Returns false (and pays nothing) if you can't afford it.
+func spend(amount: int) -> bool:
+	if amount > money:
+		return false
+	add_money(-amount)
+	return true
+
+
+func add_rating(stars: int) -> void:
+	ratings.append(clampi(stars, 1, 5))
+	while ratings.size() > RATING_HISTORY:
+		ratings.pop_front()
+	var total := 0
+	for r in ratings:
+		total += r
+	rating = float(total) / ratings.size()
 
 
 ## Moves the in-game clock forward. Called every physics frame by the game.

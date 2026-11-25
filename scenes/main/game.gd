@@ -1,19 +1,25 @@
 extends Node3D
-## Main gameplay scene (Milestone 1).
-## Connects the world, player, motorcycle, camera and HUD:
+## Main gameplay scene.
+## Connects the world, player, motorcycle, camera, HUD and the booking system:
 ## - F to get on/off the motor (only when close / stopped)
-## - E to interact with places (shops open in later milestones)
-## - handles crashes (rider gets thrown off)
+## - E to interact: refuel at a gas pump, enter places (shops open in Milestone 3)
+## - Tab opens the Sakay phone, 1 / 2 accept / decline bookings
+## - handles crashes (rider gets thrown off, passenger cancels)
 
 const MOUNT_DISTANCE := 2.6
 const INTERACT_DISTANCE := 3.2
 const MAX_DISMOUNT_SPEED := 2.0   # m/s (~7 km/h)
+const PUMP_RADIUS_RIDING := 4.5   # how close the motor must stop to the pump
+const PUMP_MOTOR_RADIUS := 8.0    # on foot: motor must be parked this close to the pump
 
 @onready var world: TestCity = $World
 @onready var player: Player = $Player
 @onready var motor: Motorcycle = $Motorcycle
 @onready var cam: FollowCamera = $CameraRig
 @onready var hud: HUD = $HUD
+@onready var booking: BookingSystem = $BookingSystem
+
+var _sfx: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -21,9 +27,14 @@ func _ready() -> void:
 	motor.setup(GameState.current_motor_id)
 	motor.crashed.connect(_on_motor_crashed)
 	motor.ran_out_of_fuel.connect(_on_out_of_fuel)
+	booking.setup(world, player, motor, hud, cam)
+	hud.refuel_menu.amount_chosen.connect(_on_refuel_chosen)
+	hud.refuel_menu.closed.connect(_refresh_mouse)
+	_sfx = AudioStreamPlayer.new()
+	add_child(_sfx)
 	_respawn_at_home()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	hud.show_toast("Maayong aga, boss! Lakat sa motor mo kag pindota ang F.\n(Good morning! Walk to your motor and press F.)", 8.0)
+	_refresh_mouse()
+	hud.show_toast("Maayong aga, boss! Walk to your motor and press F.\nThen press Tab and GO ONLINE in the Sakay app.", 9.0)
 
 
 func _physics_process(delta: float) -> void:
@@ -35,6 +46,19 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	var menu := hud.refuel_menu
+	# While the gas pump menu is open, it gets the keys first.
+	if menu.visible:
+		if event.is_action_pressed("option_1"):
+			menu.choose(0)
+		elif event.is_action_pressed("option_2"):
+			menu.choose(1)
+		elif event.is_action_pressed("option_3"):
+			menu.choose(2)
+		elif event.is_action_pressed("pause") or event.is_action_pressed("interact"):
+			menu.close_menu()
+		return
+
 	if event.is_action_pressed("enter_exit"):
 		_toggle_ride()
 	elif event.is_action_pressed("interact"):
@@ -42,10 +66,37 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_help"):
 		hud.toggle_help()
 	elif event.is_action_pressed("phone"):
-		hud.show_toast("Sakay rider app: coming in Milestone 2!", 2.5)
+		_toggle_phone()
+	elif event.is_action_pressed("option_1") and booking.has_request():
+		booking.accept()
+	elif event.is_action_pressed("option_2") and booking.has_request():
+		booking.decline()
+	elif event.is_action_pressed("pause") and hud.phone.is_open:
+		hud.phone.close()
+		_refresh_mouse()
 	elif event.is_action_pressed("debug_respawn"):
+		booking.abort_trip()
 		_respawn_at_home()
 		hud.show_toast("Respawned at home", 2.0)
+
+
+# --- Phone & mouse -----------------------------------------------------------
+
+## Tab: open the phone with the mouse free (to click), or close it.
+func _toggle_phone() -> void:
+	var phone := hud.phone
+	if phone.is_open and phone.has_mouse:
+		phone.close()
+	else:
+		phone.open(true)
+	_refresh_mouse()
+
+
+## Free the mouse while a clickable menu is open, lock it otherwise.
+func _refresh_mouse() -> void:
+	var ui_open := hud.refuel_menu.visible or (hud.phone.is_open and hud.phone.has_mouse)
+	cam.ui_open = ui_open
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if ui_open else Input.MOUSE_MODE_CAPTURED
 
 
 # --- Get on / get off --------------------------------------------------------
@@ -93,6 +144,7 @@ func _near_motor() -> bool:
 func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 	if player.state != Player.State.RIDING:
 		return
+	booking.on_crash()   # passenger falls off and cancels (if any)
 	motor.set_ridden(false)
 	motor.fall_over()
 	# Throw the rider away from the wall, a bit up in the air.
@@ -103,7 +155,47 @@ func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 
 
 func _on_out_of_fuel() -> void:
-	hud.show_toast("Wala na gasolina! (Out of gas)\nGas stations open in Milestone 2. Press F8 to reset.", 4.0)
+	hud.show_toast("Wala na gasolina! (Out of gas)\nHold W to push it to a gas station.", 4.0)
+
+
+# --- Gas station -------------------------------------------------------------
+
+func _pump_position() -> Vector3:
+	var gas := world.get_place("gas_station")
+	return gas["door"] if not gas.is_empty() else Vector3(INF, 0, INF)
+
+
+## Riding: stopped at the pump. On foot: standing at the pump with the motor parked close.
+func _can_refuel() -> bool:
+	var pump := _pump_position()
+	match player.state:
+		Player.State.RIDING:
+			return absf(motor.speed) < 0.6 and _flat_dist(motor.global_position, pump) < PUMP_RADIUS_RIDING
+		Player.State.ON_FOOT:
+			return _flat_dist(player.global_position, pump) < INTERACT_DISTANCE \
+				and _flat_dist(motor.global_position, pump) < PUMP_MOTOR_RADIUS
+	return false
+
+
+func _open_refuel_menu() -> void:
+	hud.refuel_menu.open_menu(motor.fuel_liters, motor.get_tank_liters(), GameState.money)
+	_refresh_mouse()
+
+
+func _on_refuel_chosen(liters: float) -> void:
+	var price := float(Economy.GAS_PRICE_PER_LITER)
+	# If you can't afford it all, buy what your wallet allows.
+	var affordable := minf(liters, GameState.money / price)
+	if affordable < 0.05:
+		hud.show_toast("Kulang ang kwarta! (Not enough money)", 2.5)
+		return
+	var added := motor.refuel(affordable)
+	var cost := int(ceil(added * price))
+	GameState.add_money(-cost)
+	GameState.today["gas_spent"] = int(GameState.today["gas_spent"]) + cost
+	_sfx.stream = Sfx.cash()
+	_sfx.play()
+	hud.show_toast("Nagpagasolina: %.1f L · -%s" % [added, Economy.format_peso(cost)], 3.0)
 
 
 # --- Interact with places ----------------------------------------------------
@@ -121,10 +213,16 @@ func _nearest_place() -> Dictionary:
 
 
 func _interact() -> void:
+	if _can_refuel():
+		_open_refuel_menu()
+		return
 	if player.state != Player.State.ON_FOOT:
 		return
 	var place := _nearest_place()
 	if place.is_empty():
+		return
+	if place["id"] == "gas_station":
+		hud.show_toast("Park your motor near the pump first (or ride in and stop at the pump).", 3.0)
 		return
 	hud.show_toast("%s\nSarado pa. Abi-abi lang! (Opens in a later milestone)" % place["name"], 3.0)
 
@@ -144,17 +242,25 @@ func _respawn_at_home() -> void:
 
 func _update_prompt() -> void:
 	var text := ""
-	match player.state:
-		Player.State.ON_FOOT:
-			if _near_motor():
-				text = "[F]  Sakay sa motor  (Get on)"
-			else:
-				var place := _nearest_place()
-				if not place.is_empty():
-					text = "[E]  %s" % place["name"]
-		Player.State.RIDING:
-			if absf(motor.speed) < 0.5:
-				text = "[F]  Panaog  (Get off)"
+	if hud.refuel_menu.visible:
+		hud.set_prompt("")
+		return
+	if _can_refuel():
+		text = "[E]  Magpagasolina  (Refuel)"
+	else:
+		match player.state:
+			Player.State.ON_FOOT:
+				if _near_motor():
+					text = "[F]  Sakay sa motor  (Get on)"
+				else:
+					var place := _nearest_place()
+					if not place.is_empty():
+						text = "[E]  %s" % place["name"]
+			Player.State.RIDING:
+				if booking.has_request():
+					text = "[1]  Accept booking     [2]  Decline"
+				elif absf(motor.speed) < 0.5:
+					text = "[F]  Panaog  (Get off)"
 	hud.set_prompt(text)
 
 
@@ -164,3 +270,7 @@ func _update_hud() -> void:
 	hud.set_clock(GameState.day, GameState.get_time_string())
 	hud.update_vehicle(riding, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
 	hud.update_health(not riding, player.health / Player.MAX_HEALTH)
+
+
+static func _flat_dist(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()

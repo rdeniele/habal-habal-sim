@@ -1,0 +1,67 @@
+{
+  "_readme": "Passenger personalities and lines. Languages: hil = Hiligaynon, ceb = Bisaya/Cebuano, tl = Tagalog, en = English. Line types: greeting (gets on), ride (mid-trip chat), thanks (good ride), complain (bad driving / bad ride). Add new personalities freely, every line needs all 4 languages.",
+  "names": ["Maria", "Jun-jun", "Bea", "Carlo", "Nening", "Joy", "Mark", "Angel", "Kristine", "Paolo",
+            "Ella", "Rommel", "Gina", "Jessa", "Tonton", "Liza", "Inday", "Dodong", "Cha-cha", "Migs"],
+  "personalities": [
+    {
+      "id": "student",
+      "vibe": "Student late for class",
+      "lines": {
+        "greeting": {"hil": "Kuya, dali-dali lang, late na ko sa klase!", "ceb": "Kuya, paspasi palihog, late na ko sa klase!", "tl": "Kuya, pakibilisan po, late na ako sa klase!", "en": "Kuya, faster please, I'm late for class!"},
+        "ride": {"hil": "Istrikto gid ang akon prof...", "ceb": "Istrikto kaayo akong prof...", "tl": "Ang higpit ng prof ko...", "en": "My prof is so strict..."},
+        "thanks": {"hil": "Salamat, Kuya! Umabot ko!", "ceb": "Salamat, Kuya! Naabtan nako!", "tl": "Salamat, Kuya! Umabot ako!", "en": "Thanks, Kuya! I made it!"},
+        "complain": {"hil": "Kuya, hinay-hinay! Daw mahulog ko!", "ceb": "Kuya, hinay-hinay! Hapit ko mahulog!", "tl": "Kuya, dahan-dahan! Muntik na akong mahulog!", "en": "Kuya, careful! I almost fell off!"}
+      }
+    },
+    {
+      "id": "tita",
+      "vibe": "Tita going to the market",
+      "lines": {
+        "greeting": {"hil": "Sa merkado, 'Dong. Huwata anay ang akon bayong.", "ceb": "Sa merkado, 'Dong. Kadiyot, akong bayong.", "tl": "Sa palengke, Iho. Teka, ang bayong ko.", "en": "To the market, Dong. Wait, my bayong."},
+        "ride": {"hil": "Mahal na gid ang isda subong.", "ceb": "Mahal na kaayo ang isda karon.", "tl": "Ang mahal na ng isda ngayon.", "en": "Fish is so expensive these days."},
+        "thanks": {"hil": "Salamat gid, 'Dong. God bless!", "ceb": "Salamat kaayo, 'Dong. God bless!", "tl": "Salamat, Iho. God bless!", "en": "Thank you, Dong. God bless!"},
+        "complain": {"hil": "Ay! Hinay lang, ang akon itlog!", "ceb": "Ay! Hinay lang, akong itlog!", "tl": "Ay! Dahan-dahan, ang mga itlog ko!", "en": "Ay! Careful, my eggs!"}
+      }
+    },
+    {
+      "id": "call_center",
+      "vibe": "Call center agent going to work",
+      "lines": {
+        "greeting": {"hil": "Mapa-obra ko, graveyard shift naman.", "ceb": "Mo-trabaho ko, graveyard shift na pud.", "tl": "Papasok na ako, graveyard shift na naman.", "en": "Off to work, graveyard shift again."},
+        "ride": {"hil": "Kabay nga buotan ang akon customers subong.", "ceb": "Unta buotan akong customers karon.", "tl": "Sana mababait ang customers ko ngayon.", "en": "Hope my customers are nice today."},
+        "thanks": {"hil": "Salamat! Five stars ka sa akon.", "ceb": "Salamat! Five stars ka nako.", "tl": "Salamat! Five stars ka sa akin.", "en": "Thanks! Five stars from me."},
+        "complain": {"hil": "Hala, hinay! Bag-o lang ko nag-kape.", "ceb": "Hala, hinay! Bag-o pa ko nag-kape.", "tl": "Uy, dahan-dahan! Kakakape ko lang.", "en": "Whoa, easy! I just had coffee."}
+      }
+    },
+    {
+      "id": "tourist",
+      "vibe": "Tourist going to the plaza",
+      "lines": {
+        "greeting": {"hil": "Hi! Malayo bala? Una ko diri sa Bacolod!", "ceb": "Hi! Layo ba? Una nako sa Bacolod!", "tl": "Hi! Malayo ba? First time ko sa Bacolod!", "en": "Hi! Is it far? First time in Bacolod!"},
+        "ride": {"hil": "Diin bala ang pinakanami nga inasal?", "ceb": "Asa man ang pinakalami nga inasal?", "tl": "Saan masarap ang chicken inasal dito?", "en": "Where's the best chicken inasal?"},
+        "thanks": {"hil": "Salamat! City of Smiles gid!", "ceb": "Salamat! City of Smiles jud!", "tl": "Salamat! City of Smiles talaga!", "en": "Thank you! Truly the City of Smiles!"},
+        "complain": {"hil": "Amo gid bala ni pirme diri?!", "ceb": "Ingon ani jud diri pirmi?!", "tl": "Ganito ba talaga palagi dito?!", "en": "Is it always this wild here?!"}
+      }
+    },
+    {
+      "id": "office",
+      "vibe": "Office worker with a meeting",
+      "lines": {
+        "greeting": {"hil": "Sa opisina, palihog. May meeting ko alas nuebe.", "ceb": "Sa opisina, palihog. Naa koy meeting alas nuebe.", "tl": "Sa opisina po. May meeting ako ng alas nuwebe.", "en": "To the office, please. Meeting at nine."},
+        "ride": {"hil": "Traffic naman sa Lacson...", "ceb": "Traffic na pud sa Lacson...", "tl": "Traffic na naman sa Lacson...", "en": "Traffic on Lacson again..."},
+        "thanks": {"hil": "Sakto gid, salamat!", "ceb": "Sakto kaayo, salamat!", "tl": "Sakto, salamat!", "en": "Perfect timing, thanks!"},
+        "complain": {"hil": "Kuya, hinay lang anay.", "ceb": "Kuya, hinay lang sa.", "tl": "Kuya, dahan-dahan lang po.", "en": "Kuya, slow down a bit."}
+      }
+    },
+    {
+      "id": "vendor",
+      "vibe": "Vendor with a box of piaya",
+      "lines": {
+        "greeting": {"hil": "Kuya, buligi ko sini nga kahon sang piaya!", "ceb": "Kuya, tabangi ko ani nga kahon sa piaya!", "tl": "Kuya, patulong naman sa kahon ng piaya!", "en": "Kuya, help me with this box of piaya!"},
+        "ride": {"hil": "Mabakal gid ang piaya sa plaza.", "ceb": "Halin kaayo ang piaya sa plaza.", "tl": "Mabenta ang piaya sa plaza.", "en": "Piaya sells well near the plaza."},
+        "thanks": {"hil": "Ma, isa ka piaya para sa imo. Salamat!", "ceb": "O, usa ka piaya para nimo. Salamat!", "tl": "O, isang piaya para sa'yo. Salamat!", "en": "Here, one piaya for you. Thanks!"},
+        "complain": {"hil": "Ang akon piaya! Hinay!", "ceb": "Akong piaya! Hinay!", "tl": "Ang piaya ko! Dahan-dahan!", "en": "My piaya! Careful!"}
+      }
+    }
+  ]
+}

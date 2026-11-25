@@ -3,8 +3,9 @@ extends CanvasLayer
 ## On-screen info: wallet, day/time, speedometer, fuel, health, prompts, toasts, help.
 ## Built in code so it's easy to read. Layout:
 ##   top-left: wallet + day/time        top-right: controls help (F1)
-##   center:   toast messages
-##   bottom:   interaction prompt, health (left), speedometer + fuel (right)
+##   top-center: GPS arrow to pickup/drop-off
+##   center:   toast messages          right: Sakay phone (slides in)
+##   bottom:   passenger speech, interaction prompt, health (left), speedometer + fuel (right)
 
 const PANEL_BG := Color(0.07, 0.09, 0.13, 0.72)
 const ACCENT := Color("#14a39a")   # Sakay teal
@@ -19,6 +20,9 @@ On motor
   W  gas          S  brake / reverse
   A / D  steer    Space  handbrake
   H  horn         F  get off (when stopped)
+  E  refuel (stop at a gas pump)
+Sakay app
+  Tab  phone      1 / 2  accept / decline
 Camera
   C  change view  Mouse  look around
 Other
@@ -44,6 +48,29 @@ var _status_label: Label
 var _health_panel: PanelContainer
 var _health_bar: ProgressBar
 var _toast_time := 0.0
+var _nav_panel: PanelContainer
+var _nav_arrow: NavArrow
+var _nav_label: Label
+var _dialog_panel: PanelContainer
+var _dialog_label: RichTextLabel
+var _dialog_time := 0.0
+
+var phone: Phone
+var refuel_menu: RefuelMenu
+
+
+## Small arrow that points toward the GPS target (rotated by the HUD).
+class NavArrow extends Control:
+	var color := Color.WHITE
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(34, 34)
+		pivot_offset = Vector2(17, 17)
+
+	func _draw() -> void:
+		var c := Vector2(17, 17)
+		draw_colored_polygon(PackedVector2Array([
+			c + Vector2(0, -15), c + Vector2(11, 11), c + Vector2(0, 5), c + Vector2(-11, 11)]), color)
 
 
 func _ready() -> void:
@@ -67,13 +94,6 @@ func _ready() -> void:
 	_money_label = _label(wallet_box, "₱0", 30, MONEY_COLOR)
 	_clock_label = _label(wallet_box, "Day 1 · 7:00 AM", 18, Color.WHITE)
 	_spacer(top, true)
-	_help_panel = _panel(top)
-	_label(_help_panel, HELP_TEXT, 14, Color(0.92, 0.95, 1.0))
-	_help_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_help_hint = _panel(top)
-	_help_hint.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	_label(_help_hint, "F1  Controls", 14, Color(0.9, 0.9, 0.9))
-	_help_hint.visible = false
 
 	# --- Toast (center) ---
 	var toast_center := CenterContainer.new()
@@ -82,6 +102,19 @@ func _ready() -> void:
 	_toast_label = _label(toast_center, "", 22, Color.WHITE)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast_label.modulate.a = 0.0
+
+	# --- Passenger speech ---
+	var dialog_center := CenterContainer.new()
+	column.add_child(dialog_center)
+	_dialog_panel = _panel(dialog_center)
+	_dialog_label = RichTextLabel.new()
+	_dialog_label.bbcode_enabled = true
+	_dialog_label.fit_content = true
+	_dialog_label.scroll_active = false
+	_dialog_label.custom_minimum_size = Vector2(520, 0)
+	_dialog_label.add_theme_font_size_override("normal_font_size", 19)
+	_dialog_panel.add_child(_dialog_label)
+	_dialog_panel.visible = false
 
 	# --- Prompt ---
 	var prompt_center := CenterContainer.new()
@@ -118,13 +151,57 @@ func _ready() -> void:
 	_fuel_fill = _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	_status_label = _label(vb, "", 13, Color("#ffb4a2"))
 
+	# --- GPS (top center, separate layer so it stays centered) ---
+	var top_center := CenterContainer.new()
+	top_center.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top_center.offset_top = 18
+	top_center.offset_bottom = 90
+	add_child(top_center)
+	_nav_panel = _panel(top_center)
+	var nav_row := HBoxContainer.new()
+	nav_row.add_theme_constant_override("separation", 10)
+	_nav_panel.add_child(nav_row)
+	_nav_arrow = NavArrow.new()
+	nav_row.add_child(_nav_arrow)
+	_nav_label = _label(nav_row, "", 18, Color.WHITE)
+	_nav_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_nav_panel.visible = false
+
+	# --- Controls help (top right, overlay so it never pushes other panels) ---
+	var help_box := VBoxContainer.new()
+	help_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	help_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	help_box.offset_left = -18
+	help_box.offset_right = -18
+	help_box.offset_top = 18
+	add_child(help_box)
+	_help_panel = _panel(help_box)
+	_label(_help_panel, HELP_TEXT, 13, Color(0.92, 0.95, 1.0))
+	_help_hint = _panel(help_box)
+	_label(_help_hint, "F1  Controls", 14, Color(0.9, 0.9, 0.9))
+	_help_hint.visible = false
+	_help_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
+
 	_ignore_mouse(margin)
+	_ignore_mouse(top_center)
+	_ignore_mouse(help_box)
+
+	# --- Interactive UI (these DO take mouse clicks) ---
+	phone = Phone.new()
+	add_child(phone)
+	refuel_menu = RefuelMenu.new()
+	add_child(refuel_menu)
 
 
 func _process(delta: float) -> void:
 	if _toast_time > 0.0:
 		_toast_time -= delta
 		_toast_label.modulate.a = clampf(_toast_time / 0.5, 0.0, 1.0)   # fade out at the end
+	if _dialog_time > 0.0:
+		_dialog_time -= delta
+		_dialog_panel.visible = _dialog_time > 0.0
+	# The phone slides over the help panel, so hide help while the phone is out.
+	_help_panel.get_parent().visible = not phone.is_open
 
 
 # --- Public API (called by the game) -----------------------------------------
@@ -148,6 +225,26 @@ func show_toast(text: String, seconds: float = 3.0) -> void:
 	_toast_label.modulate.a = 1.0
 
 
+## GPS arrow + text. `angle` = radians, 0 = straight ahead, positive = to the left.
+func set_nav(text: String, color: Color, angle: float) -> void:
+	_nav_panel.visible = true
+	_nav_label.text = text
+	_nav_arrow.color = color
+	_nav_arrow.rotation = -angle
+	_nav_arrow.queue_redraw()
+
+
+func hide_nav() -> void:
+	_nav_panel.visible = false
+
+
+## Passenger (or anyone) says something at the bottom of the screen.
+func show_dialog(speaker: String, text: String, seconds: float = 4.5) -> void:
+	_dialog_label.text = "[color=#7fe3d9][b]%s:[/b][/color]  %s" % [speaker, text]
+	_dialog_panel.visible = true
+	_dialog_time = seconds
+
+
 func toggle_help() -> void:
 	_help_panel.visible = not _help_panel.visible
 	_help_hint.visible = not _help_panel.visible
@@ -163,7 +260,7 @@ func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_n
 	_fuel_fill.bg_color = Color("#ef476f") if fuel_ratio < 0.2 else ACCENT
 	var status := ""
 	if fuel_ratio <= 0.0:
-		status = "WALA NA GASOLINA! (Out of gas)"
+		status = "WALA NA GASOLINA! Tulod anay! (Out of gas: push it)"
 	elif damage >= 1.0:
 		status = "Damage %d%%" % int(damage)
 	_status_label.text = status

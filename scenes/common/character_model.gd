@@ -43,13 +43,18 @@ func walk(phase: float, amount: float) -> void:
 	arm_r.rotation = Vector3(s * 0.8, 0, 0)
 
 
-## Seated on a motor: legs forward to the footboard, hands on the handlebar.
-func pose_sit(hands_forward: bool = true) -> void:
+## Seated on a motor: legs forward to the footboard.
+## `arm_angle`: 1.15 = hands on the handlebar (rider), ~0.7 = holding the rider (passenger).
+func pose_sit(arm_angle: float = 1.15) -> void:
 	leg_l.rotation = Vector3(0.95, 0, 0.06)
 	leg_r.rotation = Vector3(0.95, 0, -0.06)
-	var arm_x := 1.15 if hands_forward else 0.2
-	arm_l.rotation = Vector3(arm_x, 0, 0)
-	arm_r.rotation = Vector3(arm_x, 0, 0)
+	arm_l.rotation = Vector3(arm_angle, 0, 0)
+	arm_r.rotation = Vector3(arm_angle, 0, 0)
+
+
+## Back to standing straight.
+func pose_stand() -> void:
+	walk(0.0, 0.0)
 
 
 func _limb(pivot_pos: Vector3, size: Vector3, color: Color, end_color: Color) -> Node3D:
