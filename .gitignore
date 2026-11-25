@@ -1,0 +1,12 @@
+# Godot 4 cache/import folder (auto-generated, never commit)
+.godot/
+/android/
+
+# Exports
+/builds/
+*.exe
+*.pck
+
+# OS junk
+.DS_Store
+Thumbs.db
