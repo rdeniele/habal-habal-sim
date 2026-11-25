@@ -161,6 +161,10 @@ func _on_online_toggled(go_online: bool) -> void:
 func go_online_now() -> void:
 	if stage != Stage.OFFLINE:
 		return
+	if not GameState.has_license or not GameState.has_motor():
+		phone.show_message("Can't go online yet", "You need a driver's license and a motor (bought or rented) to accept bookings.")
+		hud.show_toast("You need a license and a motor first!", 2.5)
+		return
 	stage = Stage.SEARCHING
 	_schedule_next_request(true)
 	phone.set_online(true)

@@ -55,8 +55,21 @@ var _dialog_panel: PanelContainer
 var _dialog_label: RichTextLabel
 var _dialog_time := 0.0
 
+var _objective_panel: PanelContainer
+var _objective_title: Label
+var _objective_text: Label
+var _meter_box: VBoxContainer
+var _meter_label: Label
+var _meter_bar: ProgressBar
+var _meter_fill: StyleBoxFlat
+var _fade: ColorRect
+var _caption: Label
+
 var phone: Phone
 var refuel_menu: RefuelMenu
+var dialog_box: DialogBox
+var license_card: LicenseCard
+var shop: MotorShopUI
 
 
 ## Small arrow that points toward the GPS target (rotated by the HUD).
@@ -87,12 +100,33 @@ func _ready() -> void:
 	# --- Top row ---
 	var top := HBoxContainer.new()
 	column.add_child(top)
-	var wallet := _panel(top)
-	wallet.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	var left_col := VBoxContainer.new()
+	left_col.add_theme_constant_override("separation", 10)
+	left_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	top.add_child(left_col)
+	var wallet := _panel(left_col)
+	wallet.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	var wallet_box := VBoxContainer.new()
 	wallet.add_child(wallet_box)
 	_money_label = _label(wallet_box, "₱0", 30, MONEY_COLOR)
 	_clock_label = _label(wallet_box, "Day 1 · 7:00 AM", 18, Color.WHITE)
+	# Objective (story / tutorial steps)
+	_objective_panel = _panel(left_col)
+	var obj_box := VBoxContainer.new()
+	obj_box.custom_minimum_size.x = 320
+	_objective_panel.add_child(obj_box)
+	_objective_title = _label(obj_box, "", 13, ACCENT.lightened(0.3))
+	_objective_text = _label(obj_box, "", 17, Color.WHITE)
+	_objective_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_objective_text.custom_minimum_size.x = 320
+	_meter_box = VBoxContainer.new()
+	obj_box.add_child(_meter_box)
+	_meter_label = _label(_meter_box, "", 13, Color(0.8, 0.85, 0.9))
+	_meter_bar = _bar(_meter_box, Color("#2ecc71"))
+	_meter_fill = _meter_bar.get_theme_stylebox("fill") as StyleBoxFlat
+	_meter_box.visible = false
+	_objective_panel.visible = false
+
 	_spacer(top, true)
 
 	# --- Toast (center) ---
@@ -179,8 +213,8 @@ func _ready() -> void:
 	_label(_help_panel, HELP_TEXT, 13, Color(0.92, 0.95, 1.0))
 	_help_hint = _panel(help_box)
 	_label(_help_hint, "F1  Controls", 14, Color(0.9, 0.9, 0.9))
-	_help_hint.visible = false
 	_help_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
+	_help_panel.visible = false   # starts hidden: press F1 to show
 
 	_ignore_mouse(margin)
 	_ignore_mouse(top_center)
@@ -191,6 +225,28 @@ func _ready() -> void:
 	add_child(phone)
 	refuel_menu = RefuelMenu.new()
 	add_child(refuel_menu)
+	shop = MotorShopUI.new()
+	add_child(shop)
+	dialog_box = DialogBox.new()
+	add_child(dialog_box)
+	license_card = LicenseCard.new()
+	add_child(license_card)
+
+	# --- Fade to black + big caption (on top of everything) ---
+	_fade = ColorRect.new()
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade.color = Color(0, 0, 0, 0)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_fade)
+	_caption = Label.new()
+	_caption.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_caption.add_theme_font_size_override("font_size", 34)
+	_caption.add_theme_color_override("font_color", Color.WHITE)
+	_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_caption.modulate.a = 0.0
+	add_child(_caption)
 
 
 func _process(delta: float) -> void:
@@ -243,6 +299,49 @@ func show_dialog(speaker: String, text: String, seconds: float = 4.5) -> void:
 	_dialog_label.text = "[color=#7fe3d9][b]%s:[/b][/color]  %s" % [speaker, text]
 	_dialog_panel.visible = true
 	_dialog_time = seconds
+
+
+## Story objective in the top-left. Empty text hides it.
+func set_objective(title: String, text: String) -> void:
+	_objective_panel.visible = text != ""
+	_objective_title.text = title.to_upper()
+	_objective_text.text = text
+
+
+## Optional meter under the objective (e.g. passenger comfort). ratio < 0 hides it.
+func set_objective_meter(label_text: String, ratio: float) -> void:
+	_meter_box.visible = ratio >= 0.0
+	_meter_label.text = label_text
+	_meter_bar.value = clampf(ratio, 0.0, 1.0) * 100.0
+	_meter_fill.bg_color = Color("#2ecc71") if ratio > 0.6 else (Color("#ffd166") if ratio > 0.35 else Color("#ef476f"))
+
+
+## Fade the screen to black. Use with await.
+func fade_out(seconds: float = 0.5) -> void:
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, seconds)
+	await tw.finished
+
+
+func fade_in(seconds: float = 0.5) -> void:
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 0.0, seconds)
+	tw.parallel().tween_property(_caption, "modulate:a", 0.0, seconds)
+	await tw.finished
+
+
+## Big centered text, best shown while faded out.
+func show_caption(text: String) -> void:
+	_caption.text = text
+	var tw := create_tween()
+	tw.tween_property(_caption, "modulate:a", 1.0, 0.3)
+	await tw.finished
+
+
+## True when any clickable/blocking UI is open.
+func is_menu_open() -> bool:
+	return dialog_box.is_open or license_card.visible or shop.visible or refuel_menu.visible \
+		or (phone.is_open and phone.has_mouse)
 
 
 func toggle_help() -> void:

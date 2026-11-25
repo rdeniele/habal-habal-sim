@@ -34,6 +34,8 @@ var throttle_input := 0.0
 var steer_input := 0.0
 var last_accel := 0.0     # m/s^2 this frame (negative = braking), for passenger comfort
 var passenger: Node3D = null
+var input_enabled := true   # false while a dialog/menu is open
+var is_active := true       # false = hidden (you don't have a motor yet)
 
 var _lean_pivot: Node3D
 var _fork: Node3D
@@ -72,13 +74,26 @@ func _ready() -> void:
 		setup(Motors.DEFAULT_MOTOR_ID)
 
 
-## Load a motor's stats from config/motors.gd and fill the tank.
-func setup(id: String) -> void:
+## Load a motor's stats from config/motors.gd, fill the tank, fix all damage.
+func setup(id: String, color_index: int = 0) -> void:
 	motor_id = id
 	stats = Motors.get_motor(id)
 	fuel_liters = float(stats["tank_liters"])
+	damage = 0.0
 	var colors: Array = stats["colors"]
-	_paint.albedo_color = Color(str(colors[0]))
+	set_paint(Color(str(colors[clampi(color_index, 0, colors.size() - 1)])))
+
+
+func set_paint(color: Color) -> void:
+	_paint.albedo_color = color
+
+
+## Show/hide the motor completely (no collision either). Used before you own one.
+func set_active(on: bool) -> void:
+	is_active = on
+	visible = on
+	collision_layer = 4 if on else 0
+	process_mode = Node.PROCESS_MODE_INHERIT if on else Node.PROCESS_MODE_DISABLED
 
 
 ## Put the motor somewhere instantly, standing still.
@@ -169,7 +184,7 @@ func _physics_process(delta: float) -> void:
 	var brake := 0.0
 	var steer := 0.0
 	var handbrake := false
-	if is_ridden:
+	if is_ridden and input_enabled:
 		throttle = Input.get_action_strength("accelerate")
 		brake = Input.get_action_strength("brake")
 		steer = Input.get_axis("steer_right", "steer_left")   # left = positive
@@ -357,7 +372,7 @@ func _process(_delta: float) -> void:
 	var frames := _playback.get_frames_available()
 	if frames <= 0:
 		return
-	var horn_on := is_ridden and Input.is_action_pressed("horn")
+	var horn_on := is_ridden and input_enabled and Input.is_action_pressed("horn")
 	var rpm := clampf(absf(speed) / maxf(get_top_speed(), 1.0), 0.0, 1.0)
 	var engine_freq := 38.0 + rpm * 95.0 + throttle_input * 10.0
 	var engine_vol := (0.05 + throttle_input * 0.05) if is_ridden else 0.0

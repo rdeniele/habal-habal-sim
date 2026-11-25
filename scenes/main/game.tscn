@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/player/follow_camera.tscn" id="5_cam"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="6_hud"]
 [ext_resource type="Script" path="res://scenes/systems/booking_system.gd" id="7_booking"]
+[ext_resource type="Script" path="res://scenes/story/story.gd" id="8_story"]
 
 [node name="Game" type="Node3D"]
 script = ExtResource("1_game")
@@ -23,3 +24,6 @@ script = ExtResource("1_game")
 
 [node name="BookingSystem" type="Node" parent="."]
 script = ExtResource("7_booking")
+
+[node name="Story" type="Node" parent="."]
+script = ExtResource("8_story")

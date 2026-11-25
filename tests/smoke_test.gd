@@ -11,6 +11,7 @@ var _shots_dir := "user://screenshots"
 
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(_shots_dir)
+	GameState.debug_skip_story()   # tests start after the tutorial
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
 

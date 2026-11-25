@@ -5,6 +5,9 @@ extends Node3D
 ## - E to interact: refuel at a gas pump, enter places (shops open in Milestone 3)
 ## - Tab opens the Sakay phone, 1 / 2 accept / decline bookings
 ## - handles crashes (rider gets thrown off, passenger cancels)
+## - runs the story/tutorial on a new game, and the Motor Shop (buy/rent/repair/sell)
+
+signal shop_purchased
 
 const MOUNT_DISTANCE := 2.6
 const INTERACT_DISTANCE := 3.2
@@ -18,22 +21,31 @@ const PUMP_MOTOR_RADIUS := 8.0    # on foot: motor must be parked this close to 
 @onready var cam: FollowCamera = $CameraRig
 @onready var hud: HUD = $HUD
 @onready var booking: BookingSystem = $BookingSystem
+@onready var story: Story = $Story
 
 var _sfx: AudioStreamPlayer
+var _last_ui_open := false
 
 
 func _ready() -> void:
 	player.camera = cam
-	motor.setup(GameState.current_motor_id)
+	motor.setup(GameState.current_motor_id, GameState.motor_color_index)
+	motor.set_active(GameState.has_motor())
 	motor.crashed.connect(_on_motor_crashed)
 	motor.ran_out_of_fuel.connect(_on_out_of_fuel)
 	booking.setup(world, player, motor, hud, cam)
 	hud.refuel_menu.amount_chosen.connect(_on_refuel_chosen)
-	hud.refuel_menu.closed.connect(_refresh_mouse)
+	hud.shop.purchase.connect(_on_shop_purchase)
+	hud.shop.repair_pressed.connect(_on_shop_repair)
+	hud.shop.sell_pressed.connect(_on_shop_sell)
+	story.setup(self, world, player, motor, hud, cam, booking)
 	_sfx = AudioStreamPlayer.new()
 	add_child(_sfx)
-	_respawn_at_home()
-	_refresh_mouse()
+	respawn_at_home()
+	_refresh_mouse(true)
+	if not GameState.story_done:
+		story.start()
+		return
 	hud.show_toast("Maayong aga, boss! Walk to your motor and press F.\nThen press Tab and GO ONLINE in the Sakay app.", 9.0)
 
 
@@ -41,11 +53,18 @@ func _physics_process(delta: float) -> void:
 	GameState.advance_time(delta)
 	if player.state == Player.State.RIDING:
 		player.global_position = motor.global_position   # keep the player "with" the motor
+	# Freeze the player while a dialog / shop / license card is up.
+	var blocked := hud.dialog_box.is_open or hud.license_card.visible or hud.shop.visible or hud.refuel_menu.visible
+	player.input_enabled = not blocked
+	motor.input_enabled = not blocked
+	_refresh_mouse()
 	_update_prompt()
 	_update_hud()
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if hud.dialog_box.is_open or hud.license_card.visible or hud.shop.visible:
+		return
 	var menu := hud.refuel_menu
 	# While the gas pump menu is open, it gets the keys first.
 	if menu.visible:
@@ -76,7 +95,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_refresh_mouse()
 	elif event.is_action_pressed("debug_respawn"):
 		booking.abort_trip()
-		_respawn_at_home()
+		respawn_at_home()
 		hud.show_toast("Respawned at home", 2.0)
 
 
@@ -89,14 +108,17 @@ func _toggle_phone() -> void:
 		phone.close()
 	else:
 		phone.open(true)
-	_refresh_mouse()
+	_refresh_mouse(true)
 
 
-## Free the mouse while a clickable menu is open, lock it otherwise.
-func _refresh_mouse() -> void:
-	var ui_open := hud.refuel_menu.visible or (hud.phone.is_open and hud.phone.has_mouse)
+## Free the mouse while a clickable menu is open, lock it when the menu closes.
+## (Only changes the mouse when the menu state changes, so Esc can still free it.)
+func _refresh_mouse(force: bool = false) -> void:
+	var ui_open := hud.is_menu_open()
 	cam.ui_open = ui_open
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if ui_open else Input.MOUSE_MODE_CAPTURED
+	if force or ui_open != _last_ui_open:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if ui_open else Input.MOUSE_MODE_CAPTURED
+	_last_ui_open = ui_open
 
 
 # --- Get on / get off --------------------------------------------------------
@@ -136,7 +158,7 @@ func _dismount() -> void:
 
 
 func _near_motor() -> bool:
-	return player.global_position.distance_to(motor.global_position) < MOUNT_DISTANCE
+	return motor.is_active and player.global_position.distance_to(motor.global_position) < MOUNT_DISTANCE
 
 
 # --- Crashes & fuel ----------------------------------------------------------
@@ -145,6 +167,7 @@ func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 	if player.state != Player.State.RIDING:
 		return
 	booking.on_crash()   # passenger falls off and cancels (if any)
+	story.on_crash()     # fails passenger training (if running)
 	motor.set_ridden(false)
 	motor.fall_over()
 	# Throw the rider away from the wall, a bit up in the air.
@@ -213,7 +236,9 @@ func _nearest_place() -> Dictionary:
 
 
 func _interact() -> void:
-	if _can_refuel():
+	if story.try_interact():
+		return
+	if motor.is_active and _can_refuel():
 		_open_refuel_menu()
 		return
 	if player.state != Player.State.ON_FOOT:
@@ -221,31 +246,138 @@ func _interact() -> void:
 	var place := _nearest_place()
 	if place.is_empty():
 		return
-	if place["id"] == "gas_station":
-		hud.show_toast("Park your motor near the pump first (or ride in and stop at the pump).", 3.0)
+	match str(place["id"]):
+		"gas_station":
+			hud.show_toast("Park your motor near the pump first (or ride in and stop at the pump).", 3.0)
+		"motor_shop":
+			if story.active:
+				hud.show_toast("Finish what you're doing first.", 2.0)
+			else:
+				open_shop(false)
+		"home":
+			hud.show_toast("Balay (Home)\nSaving and ending the day come in Milestone 4.", 3.0)
+		_:
+			hud.show_toast("%s\nSarado pa. Abi-abi lang! (Opens later)" % place["name"], 3.0)
+
+
+# --- Motor Shop --------------------------------------------------------------
+
+func open_shop(tutorial: bool) -> void:
+	var shop_door: Vector3 = world.get_place("motor_shop")["door"]
+	var near := motor.is_active and _flat_dist(motor.global_position, shop_door) < 20.0
+	hud.shop.open_shop({
+		"money": GameState.money,
+		"mode": GameState.motor_mode,
+		"current_id": GameState.current_motor_id,
+		"color_index": GameState.motor_color_index,
+		"damage": motor.damage if motor.is_active else 0.0,
+		"motor_near": near,
+		"tutorial": tutorial,
+	})
+
+
+## Trade-in value of the motor you own (0 if renting / none).
+func _trade_in_value() -> int:
+	if GameState.motor_mode != "own":
+		return 0
+	return int(int(Motors.get_motor(GameState.current_motor_id)["price"]) * Economy.SELL_BACK_RATIO)
+
+
+func _on_shop_purchase(motor_id: String, color_index: int, mode: String) -> void:
+	if booking.is_busy():
+		hud.show_toast("Finish your trip first!", 2.0)
 		return
-	hud.show_toast("%s\nSarado pa. Abi-abi lang! (Opens in a later milestone)" % place["name"], 3.0)
+	var info := Motors.get_motor(motor_id)
+	var trade_in := _trade_in_value()
+	if mode == "buy":
+		var net := int(info["price"]) - trade_in
+		if net > GameState.money:
+			_play(Sfx.error())
+			hud.show_toast("Kulang ang kwarta! (Not enough money)", 2.5)
+			return
+		GameState.add_money(-net)
+	else:
+		GameState.add_money(trade_in)   # renting: sell the old one if you owned it
+	GameState.motor_mode = "own" if mode == "buy" else "rent"
+	GameState.current_motor_id = motor_id
+	GameState.motor_color_index = color_index
+	if player.state == Player.State.RIDING:
+		_dismount()
+	motor.setup(motor_id, color_index)
+	motor.set_active(true)
+	_park_motor_at("motor_shop")
+	hud.shop.close_shop()
+	_play(Sfx.cash())
+	var bought := mode == "buy"
+	hud.show_toast("%s ang %s! (You %s it)\nIt's parked outside the shop." \
+		% ["Nabakal mo" if bought else "Gin-rentahan mo", info["name"], "bought" if bought else "rented"], 4.0)
+	shop_purchased.emit()
+
+
+func _on_shop_repair() -> void:
+	var cost := int(ceil(motor.damage)) * Economy.REPAIR_COST_PER_DAMAGE_POINT
+	if cost <= 0 or not GameState.spend(cost):
+		_play(Sfx.error())
+		return
+	motor.damage = 0.0
+	_play(Sfx.cash())
+	hud.show_toast("Naayo na! (Repaired)  -%s" % Economy.format_peso(cost), 3.0)
+	open_shop(false)
+
+
+func _on_shop_sell() -> void:
+	if booking.is_busy():
+		hud.show_toast("Finish your trip first!", 2.0)
+		return
+	var value := _trade_in_value()
+	if value <= 0:
+		return
+	if player.state == Player.State.RIDING:
+		_dismount()
+	booking.go_offline()
+	GameState.add_money(value)
+	GameState.motor_mode = "none"
+	motor.set_active(false)
+	_play(Sfx.cash())
+	hud.show_toast("Nabaligya mo ang motor (+%s).\nBuy or rent another one to keep working." % Economy.format_peso(value), 4.0)
+	open_shop(false)
+
+
+func _park_motor_at(place_id: String) -> void:
+	var place := world.get_place(place_id)
+	var door: Vector3 = place["door"]
+	var fz: float = place["front_z"]
+	motor.place(door + Vector3(2.5, 0.2, fz * 3.2), -PI * 0.5)
+
+
+func _play(stream: AudioStream) -> void:
+	_sfx.stream = stream
+	_sfx.play()
 
 
 # --- Respawn & HUD -----------------------------------------------------------
 
-func _respawn_at_home() -> void:
+func respawn_at_home() -> void:
 	var spawn := world.get_spawn()
 	motor.set_ridden(false)
 	player.set_riding(false)
 	player.teleport(spawn["player_pos"])
 	player.face_yaw(spawn["camera_yaw"])
 	motor.place(spawn["motor_pos"], spawn["motor_heading"])
+	motor.set_active(GameState.has_motor())
 	cam.set_target(player, false)
 	cam.snap_to(spawn["camera_yaw"])
 
 
 func _update_prompt() -> void:
 	var text := ""
-	if hud.refuel_menu.visible:
+	if hud.refuel_menu.visible or hud.dialog_box.is_open or hud.shop.visible or hud.license_card.visible:
 		hud.set_prompt("")
 		return
-	if _can_refuel():
+	var story_prompt := story.get_prompt()
+	if story_prompt != "":
+		text = story_prompt
+	elif motor.is_active and _can_refuel():
 		text = "[E]  Magpagasolina  (Refuel)"
 	else:
 		match player.state:
@@ -268,7 +400,7 @@ func _update_hud() -> void:
 	var riding := player.state == Player.State.RIDING
 	hud.set_money(GameState.money)
 	hud.set_clock(GameState.day, GameState.get_time_string())
-	hud.update_vehicle(riding, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
+	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
 	hud.update_health(not riding, player.health / Player.MAX_HEALTH)
 
 

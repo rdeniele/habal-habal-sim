@@ -105,6 +105,16 @@ func get_spawn() -> Dictionary:
 	}
 
 
+## Center of the driving school's cone yard.
+func get_school_yard_center() -> Vector3:
+	return _block_center(SCHOOL_BLOCK.x, SCHOOL_BLOCK.y) + Vector3(0, 0, LOT * 0.5)
+
+
+## World position of the intersection of road lines (i = north-south road, j = east-west road).
+func get_intersection(i: int, j: int) -> Vector3:
+	return Vector3(-HALF + CELL * i, 0, -HALF + CELL * j)
+
+
 ## Name of the street at a road line. ns = north-south road.
 func get_street_name(index: int, ns: bool) -> String:
 	return NS_STREETS[index] if ns else EW_STREETS[index]

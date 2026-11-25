@@ -16,6 +16,7 @@ var _fails: Array[String] = []
 
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute("user://screenshots")
+	GameState.debug_skip_story()   # tests start after the tutorial
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
 	booking = game.booking

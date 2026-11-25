@@ -11,7 +11,15 @@ var money: int = Economy.STARTING_MONEY
 var day: int = 1
 var time_hours: float = Economy.DAY_START_HOUR   # 0.0 - 24.0
 var current_motor_id: String = Motors.DEFAULT_MOTOR_ID
+var motor_color_index: int = 0
+## "none" = no motor yet, "rent" = renting (pays boundary daily), "own" = bought
+var motor_mode: String = "none"
 var respect: int = 0
+
+# --- Story / tutorial ---
+var player_name: String = ""
+var has_license: bool = false
+var story_done: bool = false
 
 ## Star ratings from passengers (newest last). Starts with a few 5s so you begin at 5.0.
 var ratings: Array[int] = [5, 5, 5, 5, 5]
@@ -43,6 +51,21 @@ func spend(amount: int) -> bool:
 		return false
 	add_money(-amount)
 	return true
+
+
+func has_motor() -> bool:
+	return motor_mode != "none"
+
+
+## Set up a "finished tutorial" state (used by tests and debug skip).
+func debug_skip_story() -> void:
+	story_done = true
+	has_license = true
+	if player_name == "":
+		player_name = "Juan Dela Cruz"
+	if motor_mode == "none":
+		motor_mode = "own"
+		current_motor_id = Motors.DEFAULT_MOTOR_ID
 
 
 func add_rating(stars: int) -> void:

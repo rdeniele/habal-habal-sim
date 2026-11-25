@@ -34,6 +34,21 @@ func build(rng: RandomNumberGenerator, passenger_name: String) -> void:
 		Color(HELMETS[rng.randi() % HELMETS.size()]))
 
 
+## Build with specific colors (story characters like the instructor or Nanay).
+## Pass helmet with alpha 0 for no helmet.
+func build_with_colors(person_name: String, jacket: Color, pants: Color, helmet: Color) -> void:
+	display_name = person_name
+	name = "NPC_" + person_name.replace(" ", "_")
+	model = CharacterModel.new()
+	add_child(model)
+	model.build(jacket, pants, helmet)
+
+
+## Floating name tag above the head.
+func add_name_tag(text: String) -> void:
+	LowPoly.label(self, text, Vector3(0, 2.35, 0), 0.32)
+
+
 func _physics_process(delta: float) -> void:
 	_t += delta
 	match state:
