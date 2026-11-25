@@ -13,9 +13,8 @@ const PRESETS: Array = [
 const PITCH_MIN := -1.2
 const PITCH_MAX := 0.35
 
-@export var mouse_sensitivity := 0.0025
+## Mouse sensitivity and invert Y come from Settings (settings menu).
 @export var stick_sensitivity := 2.6
-@export var invert_y := false
 
 var target: Node3D
 var follow_heading := false   # auto-rotate behind the motor
@@ -76,13 +75,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("pause"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
-		_yaw -= motion.relative.x * mouse_sensitivity
-		var y_sign := -1.0 if invert_y else 1.0
-		_pitch = clampf(_pitch - motion.relative.y * mouse_sensitivity * y_sign, PITCH_MIN, PITCH_MAX)
+		_yaw -= motion.relative.x * Settings.mouse_sensitivity
+		var y_sign := -1.0 if Settings.invert_y else 1.0
+		_pitch = clampf(_pitch - motion.relative.y * Settings.mouse_sensitivity * y_sign, PITCH_MIN, PITCH_MAX)
 		_idle_look_time = 0.0
 	elif event.is_action_pressed("camera_change"):
 		_preset = (_preset + 1) % PRESETS.size()
@@ -93,7 +90,7 @@ func _physics_process(delta: float) -> void:
 	var look := Input.get_vector("look_left", "look_right", "look_up", "look_down")
 	if look.length() > 0.0:
 		_yaw -= look.x * stick_sensitivity * delta
-		var y_sign := -1.0 if invert_y else 1.0
+		var y_sign := -1.0 if Settings.invert_y else 1.0
 		_pitch = clampf(_pitch - look.y * stick_sensitivity * delta * y_sign, PITCH_MIN, PITCH_MAX)
 		_idle_look_time = 0.0
 	_idle_look_time += delta

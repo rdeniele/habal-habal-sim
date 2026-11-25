@@ -70,6 +70,8 @@ var refuel_menu: RefuelMenu
 var dialog_box: DialogBox
 var license_card: LicenseCard
 var shop: MotorShopUI
+var end_of_day: EndOfDayScreen
+var pause_menu: PauseMenu
 
 
 ## Small arrow that points toward the GPS target (rotated by the HUD).
@@ -248,6 +250,12 @@ func _ready() -> void:
 	_caption.modulate.a = 0.0
 	add_child(_caption)
 
+	# --- Full-screen menus (on top of everything) ---
+	end_of_day = EndOfDayScreen.new()
+	add_child(end_of_day)
+	pause_menu = PauseMenu.new()
+	add_child(pause_menu)
+
 
 func _process(delta: float) -> void:
 	if _toast_time > 0.0:
@@ -341,7 +349,7 @@ func show_caption(text: String) -> void:
 ## True when any clickable/blocking UI is open.
 func is_menu_open() -> bool:
 	return dialog_box.is_open or license_card.visible or shop.visible or refuel_menu.visible \
-		or (phone.is_open and phone.has_mouse)
+		or end_of_day.visible or pause_menu.visible or (phone.is_open and phone.has_mouse)
 
 
 func toggle_help() -> void:

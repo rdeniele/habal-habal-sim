@@ -60,6 +60,13 @@ var places: Array[Dictionary] = []
 ## Pickup/drop-off spots on sidewalks: [{pos, road_dir, street, label}]
 var address_points: Array[Dictionary] = []
 
+## Lighting handles (the DayCycle changes these over the day).
+var sun: DirectionalLight3D
+var environment: Environment
+var sky_material: ProceduralSkyMaterial
+## Materials that glow at night (windows, street lamps). Set with set_night_glow().
+var _glow_materials: Array[StandardMaterial3D] = []
+
 var _rng := RandomNumberGenerator.new()
 var _collision: StaticBody3D
 ## MultiMesh buckets: name -> {"xforms": Array, "colors": Array}
@@ -115,6 +122,13 @@ func get_intersection(i: int, j: int) -> Vector3:
 	return Vector3(-HALF + CELL * i, 0, -HALF + CELL * j)
 
 
+## 0 = day (no glow), 1 = full night glow for windows and street lamps.
+func set_night_glow(amount: float) -> void:
+	for m in _glow_materials:
+		# Squared so the glow fades in gently around sunset instead of all at once.
+		m.emission_energy_multiplier = amount * amount * float(m.get_meta("max_energy", 1.0))
+
+
 ## Name of the street at a road line. ns = north-south road.
 func get_street_name(index: int, ns: bool) -> String:
 	return NS_STREETS[index] if ns else EW_STREETS[index]
@@ -167,6 +181,7 @@ func _build_address_points() -> void:
 
 func _build_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
+	sky_material = sky_mat
 	sky_mat.sky_top_color = Color("#4f9fe0")
 	sky_mat.sky_horizon_color = Color("#cfe8f5")
 	sky_mat.ground_horizon_color = Color("#cfe8f5")
@@ -175,6 +190,7 @@ func _build_environment() -> void:
 	sky.sky_material = sky_mat
 
 	var env := Environment.new()
+	environment = env
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
@@ -190,7 +206,7 @@ func _build_environment() -> void:
 	add_child(world_env)
 
 	# The sun. Milestone 4 will rotate this over the day.
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.rotation_degrees = Vector3(-52, -35, 0)
 	sun.light_energy = 1.25
@@ -320,11 +336,11 @@ func _add_window_row(pos: Vector3, size: Vector3, y: float) -> void:
 	for i in nx:
 		var x := -size.x * 0.5 + size.x * (i + 0.5) / nx
 		for s: float in [-1.0, 1.0]:
-			_mm("box", pos + Vector3(x, y, s * (size.z * 0.5 + 0.03)), Vector3(1.1, 1.2, 0.08), WINDOW_COLOR)
+			_mm("window", pos + Vector3(x, y, s * (size.z * 0.5 + 0.03)), Vector3(1.1, 1.2, 0.08), WINDOW_COLOR)
 	for i in nz:
 		var z := -size.z * 0.5 + size.z * (i + 0.5) / nz
 		for s: float in [-1.0, 1.0]:
-			_mm("box", pos + Vector3(s * (size.x * 0.5 + 0.03), y, z), Vector3(0.08, 1.2, 1.1), WINDOW_COLOR)
+			_mm("window", pos + Vector3(s * (size.x * 0.5 + 0.03), y, z), Vector3(0.08, 1.2, 1.1), WINDOW_COLOR)
 
 
 ## Sari-sari store details: colorful awning, store window with grill, sign board.
@@ -481,6 +497,9 @@ func _add_post_line(points: Array[Vector3], along_z: bool) -> void:
 		_mm("cyl", p + Vector3(0, 3.75, 0), Vector3(0.26, 7.5, 0.26), POLE_COLOR)
 		var arm := Vector3(1.8, 0.12, 0.12) if along_z else Vector3(0.12, 0.12, 1.8)
 		_mm("box", p + Vector3(0, 7.1, 0), arm, POLE_COLOR)
+		# Street lamp head hanging over the road (glows at night)
+		var lamp_off := Vector3(-1.3, 6.8, 0) if along_z else Vector3(0, 6.8, -1.3)
+		_mm("lamp", p + lamp_off, Vector3(0.55, 0.14, 0.32) if along_z else Vector3(0.32, 0.14, 0.55), Color("#fff3c4"))
 		_add_collider(p + Vector3(0, 3.75, 0), Vector3(0.3, 7.5, 0.3))
 		if idx > 0:
 			var prev := points[idx - 1]
@@ -577,6 +596,8 @@ func _flush_multimeshes() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 0.95
+	var window_mat := _glow_material(Color("#ffd27a"), 0.9)
+	var lamp_mat := _glow_material(Color("#ffe9a8"), 4.0)
 	for bucket: String in _buckets:
 		var data: Dictionary = _buckets[bucket]
 		var xforms: Array = data["xforms"]
@@ -592,12 +613,31 @@ func _flush_multimeshes() -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "MM_" + bucket
 		mmi.multimesh = mm
-		mmi.material_override = mat
+		match bucket:
+			"window":
+				mmi.material_override = window_mat
+			"lamp":
+				mmi.material_override = lamp_mat
+			_:
+				mmi.material_override = mat
 		# Flat ground stuff and far mountains don't need to cast shadows (saves GPU).
-		if bucket == "flat" or bucket == "mountain":
+		if bucket == "flat" or bucket == "mountain" or bucket == "lamp" or bucket == "window":
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 	_buckets.clear()
+
+
+## Vertex-colored material that can glow (emission turned up at night by DayCycle).
+func _glow_material(glow_color: Color, max_energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.6
+	m.emission_enabled = true
+	m.emission = glow_color
+	m.emission_energy_multiplier = 0.0
+	m.set_meta("max_energy", max_energy)
+	_glow_materials.append(m)
+	return m
 
 
 func _pick(arr: Array) -> String:

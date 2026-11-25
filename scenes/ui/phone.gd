@@ -10,6 +10,7 @@ signal online_toggled(go_online: bool)
 signal accept_pressed
 signal decline_pressed
 signal cancel_pressed
+signal last_ride_pressed
 
 const W := 330.0
 const H := 520.0
@@ -30,6 +31,7 @@ var _tween: Tween
 var _online := false
 var _status_pill: Label
 var _toggle_btn: Button
+var _last_ride_btn: Button
 var _earn_label: Label
 var _rides_label: Label
 var _rating_label: Label
@@ -88,6 +90,9 @@ func _ready() -> void:
 	_toggle_btn = _button(body, "GO ONLINE", TEAL)
 	_toggle_btn.custom_minimum_size.y = 46
 	_toggle_btn.pressed.connect(func() -> void: online_toggled.emit(not _online))
+	_last_ride_btn = _button(body, "LAST RIDE  (end the day near home)", Color("#8338ec"))
+	_last_ride_btn.pressed.connect(func() -> void: last_ride_pressed.emit())
+	_last_ride_btn.visible = false
 
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 8)
@@ -149,6 +154,13 @@ func set_online(on: bool) -> void:
 	_set_button_color(_toggle_btn, Color("#5c6773") if on else TEAL)
 	_status_pill.text = " ● ONLINE " if on else " OFFLINE "
 	_status_pill.add_theme_color_override("font_color", Color("#c8ffd9") if on else Color(1, 1, 1, 0.7))
+
+
+## Show the Last Ride button while online; grey it out once it's switched on.
+func set_last_ride_state(online: bool, active: bool) -> void:
+	_last_ride_btn.visible = online
+	_last_ride_btn.disabled = active
+	_last_ride_btn.text = "LAST RIDE ON  ·  next trip ends near home" if active else "LAST RIDE  (end the day near home)"
 
 
 func set_toggle_enabled(enabled: bool) -> void:

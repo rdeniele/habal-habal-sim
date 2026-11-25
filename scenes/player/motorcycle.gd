@@ -42,6 +42,7 @@ var _fork: Node3D
 var _front_wheel: Node3D
 var _rear_wheel: Node3D
 var _rider: CharacterModel
+var _headlight: SpotLight3D
 var _paint: StandardMaterial3D
 var _crash_cooldown := 0.0
 var _bump_cooldown := 0.0
@@ -112,6 +113,10 @@ func set_ridden(on: bool) -> void:
 	_rider.visible = on
 	if on:
 		is_fallen = false   # picking the motor back up
+
+
+func set_headlight(on: bool) -> void:
+	_headlight.visible = on
 
 
 func fall_over() -> void:
@@ -328,6 +333,17 @@ func _build_model() -> void:
 	LowPoly.box(_fork, Vector3(0.66, 0.05, 0.05), black, Vector3(0, 1.02, 0.2))                    # handlebar
 	LowPoly.box(_fork, Vector3(0.18, 0.1, 0.05), Color.WHITE, Vector3(0, 1.0, -0.02), LowPoly.glow(Color("#fff6d5"), 3.0))  # headlight
 
+	# Real light from the headlight, switched on at night by the DayCycle
+	_headlight = SpotLight3D.new()
+	_headlight.position = Vector3(0, 1.0, -0.1)
+	_headlight.rotation_degrees = Vector3(-10, 0, 0)
+	_headlight.spot_range = 30.0
+	_headlight.spot_angle = 34.0
+	_headlight.light_energy = 5.0
+	_headlight.light_color = Color("#fff1d0")
+	_headlight.visible = false
+	_fork.add_child(_headlight)
+
 	# Rider model (only visible while someone is riding)
 	_rider = CharacterModel.new()
 	_rider.name = "Rider"
@@ -361,6 +377,7 @@ func _setup_audio() -> void:
 	_audio = AudioStreamPlayer3D.new()
 	_audio.stream = gen
 	_audio.unit_size = 6.0
+	_audio.bus = "SFX"
 	add_child(_audio)
 	_audio.play()
 	_playback = _audio.get_stream_playback() as AudioStreamGeneratorPlayback

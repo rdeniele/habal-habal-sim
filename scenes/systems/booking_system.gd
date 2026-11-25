@@ -9,6 +9,13 @@ extends Node
 ## bumping into things and going too fast lower it. Comfort + trip time = star rating.
 
 signal trip_completed(fare: int, tip: int, stars: int)
+signal final_ride_done   # the "Last Ride" trip is finished: time to go home
+
+## Sakay doesn't send bookings late at night (hours, 24h clock).
+const CLOSED_FROM := 23.0
+const OPEN_FROM := 5.0
+## The final "Last Ride" booking drops off within this distance of home.
+const HOME_DROP_RADIUS := 150.0
 
 enum Stage { OFFLINE, SEARCHING, REQUEST, TO_PICKUP, BOARDING, TO_DROPOFF }
 
@@ -35,6 +42,8 @@ const PICKUP_COLOR := Color("#2ecc71")
 const DROPOFF_COLOR := Color("#ff8c42")
 
 var stage: Stage = Stage.OFFLINE
+var last_ride := false   # player pressed "Last Ride": next booking ends near home
+var _closed_shown := false
 
 var world: TestCity
 var player: Player
@@ -66,6 +75,7 @@ func _ready() -> void:
 	_marker = TargetMarker.new()
 	add_child(_marker)
 	_sfx = AudioStreamPlayer.new()
+	_sfx.bus = "SFX"
 	add_child(_sfx)
 	_load_dialog()
 
@@ -82,6 +92,7 @@ func setup(p_world: TestCity, p_player: Player, p_motor: Motorcycle, p_hud: HUD,
 	phone.accept_pressed.connect(accept)
 	phone.decline_pressed.connect(decline)
 	phone.cancel_pressed.connect(cancel_trip)
+	phone.last_ride_pressed.connect(request_last_ride)
 	motor.bumped.connect(_on_bumped)
 
 
@@ -117,8 +128,17 @@ func _physics_process(delta: float) -> void:
 	match stage:
 		Stage.SEARCHING:
 			_next_request_in -= delta
-			if _next_request_in <= 0.0:
-				_make_request()
+			if is_closed_hours():
+				if not _closed_shown:
+					_closed_shown = true
+					phone.show_message("Sakay is resting", "No bookings from 11 PM to 5 AM. Go home and sleep!")
+				_next_request_in = maxf(_next_request_in, 2.0)
+			else:
+				if _closed_shown:
+					_closed_shown = false
+					phone.show_message("Looking for passengers...", "Stay near the roads. Bookings come faster when your rating is high.")
+				if _next_request_in <= 0.0:
+					_make_request()
 		Stage.REQUEST:
 			_request_time_left -= delta
 			phone.update_request_timer(_request_time_left / Economy.BOOKING_ACCEPT_SECONDS)
@@ -166,8 +186,10 @@ func go_online_now() -> void:
 		hud.show_toast("You need a license and a motor first!", 2.5)
 		return
 	stage = Stage.SEARCHING
+	last_ride = false
 	_schedule_next_request(true)
 	phone.set_online(true)
+	_refresh_last_ride_button()
 	phone.show_message("Looking for passengers...", "Stay near the roads. Bookings come faster when your rating is high.")
 
 
@@ -177,7 +199,9 @@ func go_offline() -> void:
 		return
 	stage = Stage.OFFLINE
 	_request = {}
+	last_ride = false
 	phone.set_online(false)
+	_refresh_last_ride_button()
 	phone.show_message("You're offline", "Go online to start getting bookings from passengers around Bacolod.")
 	_hide_nav()
 
@@ -191,17 +215,41 @@ func _schedule_next_request(first: bool) -> void:
 	_next_request_in = wait
 
 
+func is_closed_hours() -> bool:
+	var h := GameState.hour_of_day()
+	return h >= CLOSED_FROM or h < OPEN_FROM
+
+
+## "Last Ride" button: the next booking will be the final one, ending near home.
+func request_last_ride() -> void:
+	if stage == Stage.OFFLINE or last_ride:
+		return
+	last_ride = true
+	_refresh_last_ride_button()
+	hud.show_toast("Last Ride ON: your next booking drops off near home.", 3.0)
+	if stage == Stage.REQUEST:
+		decline()   # swap the current offer for a final one
+		_next_request_in = 1.5
+
+
+func _refresh_last_ride_button() -> void:
+	phone.set_last_ride_state(stage != Stage.OFFLINE, last_ride)
+
+
 func _make_request() -> void:
 	var here := motor.global_position
 	var pickup := _pick_point(here, PICKUP_MIN_M, PICKUP_MAX_M, {})
 	var dropoff := {}
 	if not pickup.is_empty():
-		dropoff = _pick_point(pickup["pos"], TRIP_MIN_M, TRIP_MAX_M, pickup)
+		if last_ride:
+			dropoff = _pick_near_home(pickup)
+		else:
+			dropoff = _pick_point(pickup["pos"], TRIP_MIN_M, TRIP_MAX_M, pickup)
 	if pickup.is_empty() or dropoff.is_empty():
 		_next_request_in = 3.0   # try again soon
 		return
 	var trip_m := _city_dist(pickup["pos"], dropoff["pos"])
-	var lang := GameState.passenger_language
+	var lang := Settings.passenger_language
 	if lang == "mixed":
 		lang = ["hil", "ceb", "tl", "en"][_rng.randi() % 4]
 	_request = {
@@ -213,8 +261,9 @@ func _make_request() -> void:
 		"dropoff": dropoff,
 		"pickup_m": _city_dist(here, pickup["pos"]),
 		"trip_m": trip_m,
-		"fare": Economy.calc_fare(trip_m / 1000.0, GameState.time_hours),
-		"surge": Economy.is_surge(GameState.time_hours),
+		"fare": Economy.calc_fare(trip_m / 1000.0, GameState.hour_of_day()),
+		"surge": Economy.is_surge(GameState.hour_of_day()),
+		"final": last_ride,
 	}
 	stage = Stage.REQUEST
 	_request_time_left = Economy.BOOKING_ACCEPT_SECONDS
@@ -223,6 +272,18 @@ func _make_request() -> void:
 	if _peeked:
 		phone.open(false)
 	_play(Sfx.ping())
+
+
+## A drop-off spot close to home (for the Last Ride).
+func _pick_near_home(exclude: Dictionary) -> Dictionary:
+	var home: Vector3 = world.get_place("home")["door"]
+	var options: Array[Dictionary] = []
+	for p in world.address_points:
+		if p != exclude and _flat_dist(p["pos"], home) < HOME_DROP_RADIUS:
+			options.append(p)
+	if options.is_empty():
+		return {}
+	return options[_rng.randi() % options.size()]
 
 
 ## Random address point whose city-block distance from `from` is in [min_m, max_m].
@@ -389,7 +450,24 @@ func _complete_trip() -> void:
 	hud.show_toast("+%s%s\n%s" % [Economy.format_peso(fare), tip_text, star_text], 3.5)
 	_play(Sfx.cash())
 	trip_completed.emit(fare, tip, stars)
-	_back_to_searching()
+	if bool(_request.get("final", false)):
+		_finish_last_ride()
+	else:
+		_back_to_searching()
+
+
+## After the final trip: go offline and head home.
+func _finish_last_ride() -> void:
+	_request = {}
+	_marker.hide_marker()
+	_hide_nav()
+	phone.set_toggle_enabled(true)
+	stage = Stage.OFFLINE
+	last_ride = false
+	phone.set_online(false)
+	_refresh_last_ride_button()
+	phone.show_message("That's it for today!", "Good work. Ride home, park, and press E at your door to end the day.")
+	final_ride_done.emit()
 
 
 ## 5 stars, minus points for low comfort and slow pickup/trip.

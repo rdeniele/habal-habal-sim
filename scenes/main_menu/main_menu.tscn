@@ -1,0 +1,14 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/main_menu/main_menu.gd" id="1_menu"]
+[ext_resource type="PackedScene" path="res://scenes/world/test_city.tscn" id="2_city"]
+
+[node name="MainMenu" type="Node3D"]
+script = ExtResource("1_menu")
+
+[node name="World" parent="." instance=ExtResource("2_city")]
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 70, 170)
+current = true
+far = 2500.0

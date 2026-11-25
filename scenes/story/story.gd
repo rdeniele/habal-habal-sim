@@ -58,6 +58,7 @@ func _ready() -> void:
 	_marker = TargetMarker.new()
 	add_child(_marker)
 	_sfx = AudioStreamPlayer.new()
+	_sfx.bus = "SFX"
 	add_child(_sfx)
 
 
@@ -270,6 +271,8 @@ func _day_one() -> void:
 	GameState.reset_today()
 	GameState.story_done = true
 	game.respawn_at_home()
+	game._sync_motor_to_state()
+	SaveManager.save_game(maxi(GameState.save_slot, 1))   # first save: Day 1 morning
 	await _sleep(2.0)
 	await hud.fade_in(0.8)
 	hud.set_objective("Day 1", "Get on your motor (F), press Tab and GO ONLINE in the Sakay app.")

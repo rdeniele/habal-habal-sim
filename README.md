@@ -11,7 +11,8 @@ Made with **Godot 4** (GDScript).
    It's a single `.exe`, no installer. Unzip it anywhere, e.g. `C:\Tools\Godot\`.
 2. Open Godot → **Import** → pick this folder's `project.godot` → **Import & Edit**.
    (The first open takes a moment while Godot scans the project.)
-3. Press **F5** (or the ▶ Play button, top right) to run the game.
+3. Press **F5** (or the ▶ Play button, top right) to run the game. It opens on the **main menu**:
+   New Game (pick one of 3 save slots), Continue, Load Game, Settings, Credits, Quit.
 
 Optional: rename the exe to `godot.exe` and add its folder to your PATH, so this works in a terminal:
 
@@ -34,7 +35,12 @@ Then every day:
 5. They hop on. Ride smoothly to the orange beam: hard braking, bumps and speeding make them uncomfortable.
 6. Stop at the drop-off: you get paid and rated (1-5 stars). Good ratings = more bookings.
 7. Visit the **Motor Shop** (E at its door) anytime to buy/rent another motor, repair damage, or sell yours.
-8. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
+8. Ready to stop? Tap **LAST RIDE** in the app: your next booking drops off near home.
+   Then ride home, park, and press **E at your front door** to end the day.
+   You'll see the **End of Day** summary (fares, gas, rent, net earnings), then the game **auto-saves**.
+   Renting? The ₱350 boundary is paid when you sleep. Can't pay = debt; 3 unpaid days = motor taken back.
+   Stay out past 2 AM and you fall asleep on the road. Sakay sends no bookings 11 PM - 5 AM.
+9. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
 
 ## Controls
 
@@ -52,7 +58,7 @@ Then every day:
 | Accept / decline booking | 1 / 2 | D-pad up / down |
 | Change camera | C | R3 |
 | Controls help | F1 | |
-| Free the mouse | Esc | |
+| Pause menu (settings, save at home, quit) | Esc | Start |
 | Respawn at home (debug) | F8 | |
 
 ## Project layout
@@ -91,6 +97,12 @@ godot --path . res://tests/ride_test.tscn
 godot --path . res://tests/story_test.tscn
 ```
 
+```powershell
+godot --path . res://tests/day_test.tscn
+```
+
+Saves and settings live in `%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\` (`saves/slot_1.json` ... and `settings.cfg`).
+
 Most models are built from code (boxes/cylinders) as placeholders, so everything is plain text and easy to change.
 
 ## Milestones
@@ -98,7 +110,7 @@ Most models are built from code (boxes/cylinders) as placeholders, so everything
 1. ✅ Foundation – test city, on-foot player, arcade motorcycle, get on/off, third-person camera
 2. ✅ Ride-hailing loop – Sakay app, bookings, passengers, fares, ratings, fuel, gas stations
 3. ✅ Story & economy – intro, driving school, license, motor shop (buy/rent)
-4. Day cycle & saves – time of day, last ride, end-of-day summary, saves, menus, settings
+4. ✅ Day cycle & saves – time of day, last ride, end-of-day summary, saves, menus, settings
 5. Traffic, road rage & fights
 6. Real Bacolod map from OpenStreetMap
 7. Polish & Windows export
