@@ -32,6 +32,7 @@ func build(rng: RandomNumberGenerator, passenger_name: String) -> void:
 		Color(JACKETS[rng.randi() % JACKETS.size()]),
 		Color(PANTS[rng.randi() % PANTS.size()]),
 		Color(HELMETS[rng.randi() % HELMETS.size()]))
+	model.set_helmet(false)   # the rider hands them a spare helmet when they get on
 
 
 ## Build with specific colors (story characters like the instructor or Nanay).
@@ -104,6 +105,7 @@ func sit_on(mount: Node3D, seat: Vector3) -> void:
 	position = seat
 	rotation = Vector3.ZERO
 	model.pose_sit(0.7)
+	model.set_helmet(true, true)   # pop! helmet on
 	state = State.ON_BIKE
 
 
@@ -113,6 +115,7 @@ func get_off_and_leave(new_parent: Node, at: Vector3, walk_target: Vector3) -> v
 	global_position = at
 	rotation = Vector3.ZERO
 	model.pose_stand()
+	model.set_helmet(false)   # gives the helmet back
 	_target = walk_target
 	_t = 0.0
 	state = State.LEAVING

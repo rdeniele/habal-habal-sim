@@ -11,7 +11,8 @@ const MUTED := Color("#6b7785")
 const CONTROLS_TEXT := """On foot: WASD walk · Shift run · Mouse look · F get on motor · E interact
 On motor: W gas · S brake/reverse · A/D steer · Space handbrake · H horn · F get off
 Sakay app: Tab phone · 1 accept · 2 decline
-Camera: C change view   ·   Esc pause   ·   F1 controls help
+Camera: C change view   ·   M full map   ·   Esc pause   ·   F1 controls help
+Needs: E at a sari-sari store to eat/drink · stand still on foot to rest
 Fighting (Milestone 5): J / left mouse punch · K / right mouse block · L dodge
 Gamepad: LS move/steer · RT gas · LT brake · Y get on/off · A interact · RB handbrake · Back phone"""
 
@@ -68,6 +69,9 @@ func _ready() -> void:
 	var lang_names: Array = Settings.LANGUAGES.values()
 	_option(grid, "Passenger language", lang_names, lang_keys.find(Settings.passenger_language),
 		func(i: int) -> void: Settings.passenger_language = lang_keys[i])
+	var day_keys := ["short", "normal", "long"]
+	_option(grid, "Day length", ["Short (~8 min)", "Normal (~16 min)", "Long (~32 min)"], day_keys.find(Settings.day_length),
+		func(i: int) -> void: Settings.day_length = day_keys[i])
 
 	_section(grid, "Controls list")
 	var controls := _label(grid, CONTROLS_TEXT, 13, MUTED)

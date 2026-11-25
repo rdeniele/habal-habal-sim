@@ -31,16 +31,22 @@ Then every day:
 1. Walk to your motor and press **F** to get on.
 2. Press **Tab** to open the **Sakay** rider app and click **GO ONLINE**.
 3. A booking pops up: press **1** to accept (or **2** to decline) within 15 seconds.
-4. Follow the GPS arrow (top of the screen) and the green beam. Stop next to the passenger.
+4. Follow the **GPS**: the blue route on the minimap (bottom-left), the arrow at the top, and the green beam.
+   The minimap always shows **H = home**, G = gas, M = motor shop, + = clinic, S = driving school,
+   orange dots = sari-sari stores. Press **M** for the full city map. Stop next to the passenger.
 5. They hop on. Ride smoothly to the orange beam: hard braking, bumps and speeding make them uncomfortable.
 6. Stop at the drop-off: you get paid and rated (1-5 stars). Good ratings = more bookings.
 7. Visit the **Motor Shop** (E at its door) anytime to buy/rent another motor, repair damage, or sell yours.
 8. Ready to stop? Tap **LAST RIDE** in the app: your next booking drops off near home.
    Then ride home, park, and press **E at your front door** to end the day.
    You'll see the **End of Day** summary (fares, gas, rent, net earnings), then the game **auto-saves**.
-   Renting? The ₱350 boundary is paid when you sleep. Can't pay = debt; 3 unpaid days = motor taken back.
+   Renting? Rent your motor each morning at the Motor Shop (next to your house). At the end of the day,
+   **return it there and pay the ₱350 boundary**. Not returned / can't pay = debt; 3 unpaid days = it's taken back.
    Stay out past 2 AM and you fall asleep on the road. Sakay sends no bookings 11 PM - 5 AM.
-9. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
+9. Watch your **food, water and energy** (bottom-left). Buy food and drinks at sari-sari stores (E at the
+   orange dots) or the gas station. Stand still on foot to rest. Need a pause? Tap **TAKE A BREAK** in the app.
+   Let a meter hit zero and you faint and wake up at the clinic (₱500).
+10. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
 
 ## Controls
 
@@ -56,6 +62,7 @@ Then every day:
 | Interact / refuel at pump | E | A |
 | Sakay phone | Tab | Back |
 | Accept / decline booking | 1 / 2 | D-pad up / down |
+| Full map | M | |
 | Change camera | C | R3 |
 | Controls help | F1 | |
 | Pause menu (settings, save at home, quit) | Esc | Start |
@@ -101,6 +108,10 @@ godot --path . res://tests/story_test.tscn
 godot --path . res://tests/day_test.tscn
 ```
 
+```powershell
+godot --path . res://tests/feedback_test.tscn
+```
+
 Saves and settings live in `%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\` (`saves/slot_1.json` ... and `settings.cfg`).
 
 Most models are built from code (boxes/cylinders) as placeholders, so everything is plain text and easy to change.
@@ -111,8 +122,10 @@ Most models are built from code (boxes/cylinders) as placeholders, so everything
 2. ✅ Ride-hailing loop – Sakay app, bookings, passengers, fares, ratings, fuel, gas stations
 3. ✅ Story & economy – intro, driving school, license, motor shop (buy/rent)
 4. ✅ Day cycle & saves – time of day, last ride, end-of-day summary, saves, menus, settings
-5. Traffic, road rage & fights
-6. Real Bacolod map from OpenStreetMap
+4.5 ✅ Playtest fixes – GPS + minimap, ₱20 minimum fare, passenger helmets, 11 passenger types, daily rental
+    return, hunger/thirst/energy + sari-sari stores, break mode, day length setting
+5. Real Bacolod map from OpenStreetMap (roads, landmarks, GPS on real streets) + new early-2000s low-poly look
+6. Traffic, traffic lights, people walking around, road rage & fights (on the real roads)
 7. Polish & Windows export
 
 ## Credits

@@ -12,6 +12,8 @@ const FPS_LIMITS := [0, 30, 60, 120]          # 0 = unlimited
 const GRAPHICS := ["low", "medium", "high"]
 const LANGUAGES := {"mixed": "Mixed", "hil": "Hiligaynon", "ceb": "Bisaya", "tl": "Tagalog", "en": "English"}
 const DEFAULT_MOUSE := 0.0025
+## Day length: in-game minutes per real second. Normal = 7 AM to 11 PM in about 16 minutes.
+const DAY_LENGTHS := {"short": 2.0, "normal": 1.0, "long": 0.5}
 
 # Display
 var fullscreen := false
@@ -29,6 +31,11 @@ var mouse_sensitivity := DEFAULT_MOUSE
 var invert_y := false
 # Gameplay
 var passenger_language := "mixed"
+var day_length := "normal"
+
+
+func game_minutes_per_second() -> float:
+	return float(DAY_LENGTHS.get(day_length, Economy.GAME_MINUTES_PER_SECOND))
 
 
 func _ready() -> void:
@@ -100,6 +107,7 @@ func save() -> void:
 	cfg.set_value("controls", "mouse_sensitivity", mouse_sensitivity)
 	cfg.set_value("controls", "invert_y", invert_y)
 	cfg.set_value("gameplay", "passenger_language", passenger_language)
+	cfg.set_value("gameplay", "day_length", day_length)
 	var err := cfg.save(PATH)
 	if err != OK:
 		push_warning("Could not save settings (error %d)" % err)
@@ -120,6 +128,9 @@ func load_settings() -> void:
 	mouse_sensitivity = cfg.get_value("controls", "mouse_sensitivity", mouse_sensitivity)
 	invert_y = cfg.get_value("controls", "invert_y", invert_y)
 	passenger_language = cfg.get_value("gameplay", "passenger_language", passenger_language)
+	day_length = cfg.get_value("gameplay", "day_length", day_length)
+	if not DAY_LENGTHS.has(day_length):
+		day_length = "normal"
 	if not GRAPHICS.has(graphics):
 		graphics = "medium"
 	if not LANGUAGES.has(passenger_language):

@@ -17,7 +17,7 @@ const OPEN_FROM := 5.0
 ## The final "Last Ride" booking drops off within this distance of home.
 const HOME_DROP_RADIUS := 150.0
 
-enum Stage { OFFLINE, SEARCHING, REQUEST, TO_PICKUP, BOARDING, TO_DROPOFF }
+enum Stage { OFFLINE, SEARCHING, REQUEST, TO_PICKUP, BOARDING, TO_DROPOFF, BREAK }
 
 const DIALOG_PATH := "res://data/dialog/passengers.json"
 
@@ -27,7 +27,7 @@ const STOP_SPEED := 1.6           # "stopped" = slower than this (m/s)
 const BOARD_ABORT_DISTANCE := 3.0 # rider drives off while passenger walks over
 const PICKUP_MIN_M := 80.0        # distances are "city block" distances (|dx| + |dz|)
 const PICKUP_MAX_M := 450.0
-const TRIP_MIN_M := 250.0
+const TRIP_MIN_M := 150.0
 const TRIP_MAX_M := 800.0
 const EXPECTED_SPEED := 7.0       # m/s used to judge if a trip was "late" (~25 km/h)
 
@@ -55,6 +55,7 @@ var cam: FollowCamera
 var _rng := RandomNumberGenerator.new()
 var _names: Array = []
 var _personalities: Array = []
+var _personality_bag: Array = []   # shuffled; refilled when empty (no repeats in a row)
 var _next_request_in := 0.0
 var _request: Dictionary = {}
 var _request_time_left := 0.0
@@ -93,6 +94,7 @@ func setup(p_world: TestCity, p_player: Player, p_motor: Motorcycle, p_hud: HUD,
 	phone.decline_pressed.connect(decline)
 	phone.cancel_pressed.connect(cancel_trip)
 	phone.last_ride_pressed.connect(request_last_ride)
+	phone.break_pressed.connect(toggle_break)
 	motor.bumped.connect(_on_bumped)
 
 
@@ -106,6 +108,16 @@ func _load_dialog() -> void:
 		_names = ["Juan"]
 	if _personalities.is_empty():
 		push_warning("No passenger personalities loaded from %s" % DIALOG_PATH)
+
+
+## Current GPS target for the trip ({} when there's none).
+func get_target() -> Dictionary:
+	match stage:
+		Stage.TO_PICKUP, Stage.BOARDING:
+			return {"pos": _request["pickup"]["pos"], "color": PICKUP_COLOR}
+		Stage.TO_DROPOFF:
+			return {"pos": _request["dropoff"]["pos"], "color": DROPOFF_COLOR}
+	return {}
 
 
 func is_busy() -> bool:
@@ -181,8 +193,8 @@ func _on_online_toggled(go_online: bool) -> void:
 func go_online_now() -> void:
 	if stage != Stage.OFFLINE:
 		return
-	if not GameState.has_license or not GameState.has_motor():
-		phone.show_message("Can't go online yet", "You need a driver's license and a motor (bought or rented) to accept bookings.")
+	if not GameState.has_license or not GameState.motor_available():
+		phone.show_message("Can't go online yet", "You need a driver's license and a motor (bought, or rented for today at the Motor Shop).")
 		hud.show_toast("You need a license and a motor first!", 2.5)
 		return
 	stage = Stage.SEARCHING
@@ -233,7 +245,26 @@ func request_last_ride() -> void:
 
 
 func _refresh_last_ride_button() -> void:
-	phone.set_last_ride_state(stage != Stage.OFFLINE, last_ride)
+	phone.set_last_ride_state(stage != Stage.OFFLINE and stage != Stage.BREAK, last_ride)
+	phone.set_break_state(stage != Stage.OFFLINE, stage == Stage.BREAK, not is_busy())
+
+
+## Pause bookings for a break (eat, drink, rest) without going offline.
+func toggle_break() -> void:
+	if stage == Stage.BREAK:
+		stage = Stage.SEARCHING
+		_schedule_next_request(true)
+		phone.set_status_text(" ● ONLINE ")
+		phone.show_message("Looking for passengers...", "Break's over. Bookings are coming again.")
+		hud.show_toast("Break over. Back to work!", 2.0)
+	elif stage == Stage.SEARCHING or stage == Stage.REQUEST:
+		if stage == Stage.REQUEST:
+			decline()
+		stage = Stage.BREAK
+		phone.set_status_text(" ☕ ON BREAK ")
+		phone.show_message("On break", "No bookings while you rest. Eat, drink, or stand still on foot to recover energy. Tap END BREAK when ready.")
+		hud.show_toast("On break. Pahuway anay! (Rest a while)", 2.5)
+	_refresh_last_ride_button()
 
 
 func _make_request() -> void:
@@ -255,7 +286,7 @@ func _make_request() -> void:
 	_request = {
 		"name": _names[_rng.randi() % _names.size()],
 		"rating": _rng.randf_range(4.3, 5.0),
-		"personality": _personalities[_rng.randi() % _personalities.size()] if not _personalities.is_empty() else {},
+		"personality": _next_personality(),
 		"lang": lang,
 		"pickup": pickup,
 		"dropoff": dropoff,
@@ -272,6 +303,16 @@ func _make_request() -> void:
 	if _peeked:
 		phone.open(false)
 	_play(Sfx.ping())
+
+
+## Next passenger type from a shuffled bag, so every type shows up before any repeats.
+func _next_personality() -> Dictionary:
+	if _personalities.is_empty():
+		return {}
+	if _personality_bag.is_empty():
+		_personality_bag = _personalities.duplicate()
+		_personality_bag.shuffle()
+	return _personality_bag.pop_back()
 
 
 ## A drop-off spot close to home (for the Last Ride).
@@ -303,6 +344,7 @@ func accept() -> void:
 	if stage != Stage.REQUEST:
 		return
 	stage = Stage.TO_PICKUP
+	_refresh_last_ride_button()
 	_pickup_time = 0.0
 	# Spawn the passenger waiting on the sidewalk.
 	_passenger = Passenger.new()
@@ -494,6 +536,7 @@ func _back_to_searching() -> void:
 	_hide_nav()
 	phone.set_toggle_enabled(true)
 	stage = Stage.SEARCHING
+	_refresh_last_ride_button()
 	_schedule_next_request(false)
 	phone.show_message("Looking for passengers...", "Stay near the roads. Bookings come faster when your rating is high.")
 

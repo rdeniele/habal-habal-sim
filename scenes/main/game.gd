@@ -19,6 +19,8 @@ const PUMP_MOTOR_RADIUS := 8.0    # on foot: motor must be parked this close to 
 const HOME_MOTOR_RADIUS := 20.0   # motor must be parked this close to home to end the day / save
 const PASS_OUT_HOUR := 26.0       # 2:00 AM (next day): you fall asleep wherever you are
 const MAIN_MENU := "res://scenes/main_menu/main_menu.tscn"
+const STALL_RADIUS := 2.6         # how close to stand to a sari-sari store
+const GPS_REFRESH := 0.4          # seconds between GPS route updates
 
 @onready var world: TestCity = $World
 @onready var player: Player = $Player
@@ -29,6 +31,10 @@ const MAIN_MENU := "res://scenes/main_menu/main_menu.tscn"
 @onready var story: Story = $Story
 
 var day_cycle: DayCycle
+var needs: Needs
+var _gps_route := PackedVector3Array()
+var _gps_timer := 0.0
+var _gps_goal := ""               # "" / "home" / "shop": where the day-end GPS points
 var _sfx: AudioStreamPlayer
 var _last_ui_open := false
 var _ending_day := false
@@ -37,7 +43,7 @@ var _ending_day := false
 func _ready() -> void:
 	player.camera = cam
 	motor.setup(GameState.current_motor_id, GameState.motor_color_index)
-	motor.set_active(GameState.has_motor())
+	motor.set_active(GameState.motor_available())
 	if GameState.motor_fuel >= 0.0:   # loaded from a save
 		motor.fuel_liters = minf(GameState.motor_fuel, motor.get_tank_liters())
 	motor.damage = GameState.motor_damage
@@ -48,6 +54,7 @@ func _ready() -> void:
 	hud.shop.purchase.connect(_on_shop_purchase)
 	hud.shop.repair_pressed.connect(_on_shop_repair)
 	hud.shop.sell_pressed.connect(_on_shop_sell)
+	hud.shop.return_pressed.connect(_on_shop_return)
 	story.setup(self, world, player, motor, hud, cam, booking)
 	booking.final_ride_done.connect(_on_final_ride_done)
 	hud.pause_menu.save_requested.connect(_on_save_requested)
@@ -55,6 +62,12 @@ func _ready() -> void:
 	day_cycle = DayCycle.new()
 	add_child(day_cycle)
 	day_cycle.setup(world, motor, cam)
+	needs = Needs.new()
+	add_child(needs)
+	needs.setup(player, motor, hud)
+	needs.fainted.connect(_on_fainted)
+	hud.food_menu.item_chosen.connect(_on_food_chosen)
+	hud.set_map_world(world)
 	_sfx = AudioStreamPlayer.new()
 	_sfx.bus = "SFX"
 	add_child(_sfx)
@@ -63,7 +76,18 @@ func _ready() -> void:
 	if not GameState.story_done:
 		story.start()
 		return
-	hud.show_toast("DAY %d · Maayong aga, %s!\nGet on your motor (F), then Tab and GO ONLINE." % [GameState.day, GameState.player_name], 7.0)
+	_morning_message()
+
+
+## What to do this morning (renters first need to rent at the shop next door).
+func _morning_message() -> void:
+	if GameState.motor_mode == "rent" and not GameState.rental_out:
+		hud.show_toast("DAY %d · Maayong aga, %s!\nRent a motor at the Motor Shop next door, then GO ONLINE." % [GameState.day, GameState.player_name], 7.0)
+		hud.set_objective("Day %d" % GameState.day, "Rent today's motor at the Motor Shop (west of your house, E at its door).")
+	elif not GameState.has_motor():
+		hud.show_toast("DAY %d · You have no motor. Buy or rent one at the Motor Shop." % GameState.day, 7.0)
+	else:
+		hud.show_toast("DAY %d · Maayong aga, %s!\nGet on your motor (F), then Tab and GO ONLINE." % [GameState.day, GameState.player_name], 7.0)
 
 
 func _physics_process(delta: float) -> void:
@@ -76,7 +100,8 @@ func _physics_process(delta: float) -> void:
 		player.global_position = motor.global_position   # keep the player "with" the motor
 	# Freeze the player while a dialog / shop / license card is up.
 	var blocked := hud.dialog_box.is_open or hud.license_card.visible or hud.shop.visible \
-		or hud.refuel_menu.visible or hud.end_of_day.visible or _ending_day
+		or hud.refuel_menu.visible or hud.food_menu.visible or hud.end_of_day.visible or _ending_day
+	needs.paused = _ending_day or story.active
 	player.input_enabled = not blocked
 	motor.input_enabled = not blocked
 	_refresh_mouse()
@@ -87,6 +112,17 @@ func _physics_process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if hud.dialog_box.is_open or hud.license_card.visible or hud.shop.visible \
 			or hud.end_of_day.visible or _ending_day:
+		return
+	if hud.food_menu.visible:
+		for i in 6:
+			if event.is_action_pressed("option_%d" % (i + 1)):
+				hud.food_menu.choose(i)
+				return
+		if event.is_action_pressed("pause") or event.is_action_pressed("interact"):
+			hud.food_menu.close_menu()
+		return
+	if event.is_action_pressed("map"):
+		hud.toggle_full_map()
 		return
 	var menu := hud.refuel_menu
 	# While the gas pump menu is open, it gets the keys first.
@@ -269,6 +305,9 @@ func _interact() -> void:
 		return
 	if player.state != Player.State.ON_FOOT:
 		return
+	if _near_stall():
+		hud.food_menu.open_menu()
+		return
 	var place := _nearest_place()
 	if place.is_empty():
 		return
@@ -296,6 +335,8 @@ func open_shop(tutorial: bool) -> void:
 		"mode": GameState.motor_mode,
 		"current_id": GameState.current_motor_id,
 		"color_index": GameState.motor_color_index,
+		"rental_out": GameState.rental_out,
+		"debt": GameState.debt,
 		"damage": motor.damage if motor.is_active else 0.0,
 		"motor_near": near,
 		"tutorial": tutorial,
@@ -325,6 +366,7 @@ func _on_shop_purchase(motor_id: String, color_index: int, mode: String) -> void
 	else:
 		GameState.add_money(trade_in)   # renting: sell the old one if you owned it
 	GameState.motor_mode = "own" if mode == "buy" else "rent"
+	GameState.rental_out = mode == "rent"
 	GameState.current_motor_id = motor_id
 	GameState.motor_color_index = color_index
 	if player.state == Player.State.RIDING:
@@ -337,7 +379,39 @@ func _on_shop_purchase(motor_id: String, color_index: int, mode: String) -> void
 	var bought := mode == "buy"
 	hud.show_toast("%s ang %s! (You %s it)\nIt's parked outside the shop." \
 		% ["Nabakal mo" if bought else "Gin-rentahan mo", info["name"], "bought" if bought else "rented"], 4.0)
+	if mode == "rent":
+		hud.set_objective("Rented for today", "Ride! Return it here and pay %s at the end of the day." % Economy.format_peso(Economy.RENT_PER_DAY))
+	else:
+		hud.set_objective("", "")
 	shop_purchased.emit()
+
+
+## Give back today's rental and pay the boundary (+ any old debt).
+func _on_shop_return() -> void:
+	if booking.is_busy():
+		hud.show_toast("Finish your trip first!", 2.0)
+		return
+	if player.state == Player.State.RIDING:
+		_dismount()
+	booking.go_offline()
+	var due := Economy.RENT_PER_DAY + GameState.debt
+	if GameState.money >= due:
+		GameState.add_money(-due)
+		GameState.today["rent_paid"] = int(GameState.today["rent_paid"]) + due
+		GameState.debt = 0
+		GameState.rent_unpaid_days = 0
+		_play(Sfx.cash())
+		hud.show_toast("Motor returned. Boundary paid: -%s\nSalamat, boss! Walk home and rest (E at your door)." % Economy.format_peso(due), 4.0)
+	else:
+		_add_unpaid_day()
+		_play(Sfx.error())
+		hud.show_toast("Motor returned, but you couldn't pay! Debt: %s" % Economy.format_peso(GameState.debt), 4.0)
+	GameState.rental_out = false
+	_sync_motor_to_state()
+	motor.set_active(false)
+	hud.set_objective("Day done", "Walk home and press E at your door to end the day.")
+	_gps_goal = "home"
+	open_shop(false)
 
 
 func _on_shop_repair() -> void:
@@ -385,7 +459,11 @@ func _play(stream: AudioStream) -> void:
 # --- End of day, rent, saving ----------------------------------------------
 
 func _on_final_ride_done() -> void:
-	hud.set_objective("Last ride done", "Ride home, park your motor, and press E at your door to end the day.")
+	_gps_goal = "shop" if GameState.motor_mode == "rent" else "home"
+	if GameState.motor_mode == "rent":
+		hud.set_objective("Last ride done", "Return the motor to the Motor Shop and pay the boundary, then walk home (E at your door).")
+	else:
+		hud.set_objective("Last ride done", "Ride home, park your motor, and press E at your door to end the day.")
 
 
 func _motor_at_home() -> bool:
@@ -432,12 +510,15 @@ func _end_day(passed_out: bool) -> void:
 	var summary := {
 		"day": GameState.day, "rides": t["rides"], "fares": t["fares"], "tips": t["tips"],
 		"gas_spent": t["gas_spent"], "rent_paid": t["rent_paid"], "clinic": t["clinic"],
-		"repairs": t["repairs"], "money": GameState.money, "debt": GameState.debt,
+		"repairs": t["repairs"], "food": t.get("food", 0), "money": GameState.money, "debt": GameState.debt,
 		"rating": GameState.rating, "notes": notes,
 	}
 	await hud.end_of_day.show_summary(summary)
 
 	# Next morning
+	_gps_goal = ""
+	GameState.wake_up_needs()
+	player.health = Player.MAX_HEALTH
 	GameState.day += 1
 	GameState.time_hours = Economy.DAY_START_HOUR
 	GameState.reset_today()
@@ -447,41 +528,138 @@ func _end_day(passed_out: bool) -> void:
 	await hud.show_caption("DAY %d" % GameState.day)
 	await get_tree().create_timer(1.2).timeout
 	await hud.fade_in(0.7)
-	hud.show_toast("Maayong aga! Day %d.%s" % [GameState.day, "  (Auto-saved)" if saved else ""], 4.0)
 	_ending_day = false
+	_morning_message()
+	if saved:
+		hud.show_toast("Day %d · Auto-saved" % GameState.day, 2.5)
 
 
-## Daily boundary for renters. Returns notes for the summary screen.
+## Renters who didn't return the motor today: the boundary becomes debt.
+## Returns notes for the summary screen.
 func _pay_rent() -> Array[String]:
 	var notes: Array[String] = []
-	if GameState.motor_mode != "rent":
+	if GameState.motor_mode != "rent" or not GameState.rental_out:
 		return notes
-	var due := Economy.RENT_PER_DAY + GameState.debt
-	if GameState.money >= due:
-		GameState.add_money(-due)
-		GameState.today["rent_paid"] = due
-		GameState.debt = 0
-		GameState.rent_unpaid_days = 0
-		return notes
-	# Can't pay: it becomes debt.
-	GameState.debt += Economy.RENT_PER_DAY
-	GameState.rent_unpaid_days += 1
-	if GameState.rent_unpaid_days >= Economy.RENT_MAX_UNPAID_DAYS:
-		notes.append("Gin-kuha na ang motor! You couldn't pay the boundary for %d days, so the motor was taken back. Rent or buy another at the Motor Shop." % GameState.rent_unpaid_days)
-		GameState.motor_mode = "none"
-		GameState.debt = 0
-		GameState.rent_unpaid_days = 0
-		motor.set_active(false)
+	notes.append("You didn't return the rented motor! Today's boundary (%s) was added to your debt." % Economy.format_peso(Economy.RENT_PER_DAY))
+	var taken := _add_unpaid_day()
+	if taken:
+		notes.append("Gin-kuha na ang motor! You couldn't pay the boundary for %d days, so the motor was taken back. Rent or buy another at the Motor Shop." % Economy.RENT_MAX_UNPAID_DAYS)
 	else:
-		notes.append("Kulang ang kwarta for the boundary! Debt is now %s. %d more unpaid day(s) and the motor gets taken back." \
+		notes.append("Debt is now %s. %d more unpaid day(s) and the motor gets taken back." \
 			% [Economy.format_peso(GameState.debt), Economy.RENT_MAX_UNPAID_DAYS - GameState.rent_unpaid_days])
 	return notes
+
+
+## One more unpaid boundary. Returns true if the motor got taken back (3 unpaid days).
+func _add_unpaid_day() -> bool:
+	GameState.debt += Economy.RENT_PER_DAY
+	GameState.rent_unpaid_days += 1
+	if GameState.rent_unpaid_days < Economy.RENT_MAX_UNPAID_DAYS:
+		return false
+	GameState.motor_mode = "none"
+	GameState.rental_out = false
+	GameState.debt = 0
+	GameState.rent_unpaid_days = 0
+	motor.set_active(false)
+	return true
 
 
 ## Copy the motor's fuel and damage into GameState (so they get saved).
 func _sync_motor_to_state() -> void:
 	GameState.motor_fuel = motor.fuel_liters if motor.is_active else -1.0
 	GameState.motor_damage = motor.damage if motor.is_active else 0.0
+
+
+# --- Food, fainting ---------------------------------------------------------
+
+func _near_stall() -> bool:
+	if player.state != Player.State.ON_FOOT:
+		return false
+	for s in world.food_stalls:
+		if _flat_dist(player.global_position, s) < STALL_RADIUS:
+			return true
+	return false
+
+
+func _on_food_chosen(item: Dictionary) -> void:
+	var price := int(item["price"])
+	if not GameState.spend(price):
+		_play(Sfx.error())
+		return
+	GameState.today["food"] = int(GameState.today.get("food", 0)) + price
+	needs.consume(item)
+	_play(Sfx.tones([660.0, 880.0], 0.07))
+	hud.show_toast("Namit! %s  -%s" % [item["name"], Economy.format_peso(price)], 2.0)
+
+
+## Too hungry / thirsty / tired: you wake up at the clinic and pay the fee.
+func _on_fainted(reason: String) -> void:
+	if _ending_day:
+		return
+	_ending_day = true
+	booking.abort_trip()
+	if player.state == Player.State.RIDING:
+		motor.set_ridden(false)
+		player.set_riding(false)
+	await hud.fade_out(0.6)
+	await hud.show_caption("Nakuyapan ka!\n(You fainted)")
+	var clinic: Dictionary = world.get_place("clinic")
+	var door: Vector3 = clinic["door"]
+	player.teleport(door + Vector3(0, 0.2, 0))
+	cam.set_target(player, false)
+	if motor.is_active:
+		_park_motor_at("clinic")
+	var fee := mini(Economy.CLINIC_FEE, maxi(GameState.money, 0))
+	GameState.add_money(-fee)
+	GameState.today["clinic"] = int(GameState.today["clinic"]) + fee
+	GameState.hunger = maxf(GameState.hunger, 50.0)
+	GameState.thirst = maxf(GameState.thirst, 50.0)
+	GameState.energy = maxf(GameState.energy, 50.0)
+	player.health = 60.0
+	GameState.time_hours += 2.0   # lost time at the clinic
+	await get_tree().create_timer(1.5).timeout
+	await hud.fade_in(0.6)
+	hud.show_toast("%s\nThe clinic took care of you: -%s. Eat, drink and rest!" % [reason, Economy.format_peso(fee)], 5.0)
+	_ending_day = false
+
+
+# --- GPS & map ---------------------------------------------------------------
+
+## Where the GPS should point: trip target, story target, or home/shop at day end.
+func _gps_target() -> Dictionary:
+	var bt := booking.get_target()
+	if not bt.is_empty():
+		return bt
+	if story.active and story._has_target:
+		return {"pos": story._target, "color": story._target_color, "label": story._target_text}
+	if _gps_goal == "shop" and GameState.rental_out:
+		return {"pos": world.get_place("motor_shop")["door"], "color": Color("#8338ec"), "label": "MOTOR SHOP (return)"}
+	if _gps_goal != "" or (GameState.story_done and GameState.hour_of_day() >= 22.0):
+		return {"pos": world.get_place("home")["door"], "color": Color("#ffd166"), "label": "HOME"}
+	return {}
+
+
+func _update_gps() -> void:
+	var me := motor.global_position if player.state == Player.State.RIDING else player.global_position
+	var facing := motor.heading if player.state == Player.State.RIDING else player.get_facing_yaw()
+	var target := _gps_target()
+	_gps_timer -= get_physics_process_delta_time()
+	if target.is_empty():
+		_gps_route = PackedVector3Array()
+	elif _gps_timer <= 0.0:
+		_gps_timer = GPS_REFRESH
+		_gps_route = world.road_graph.route(me, target["pos"])
+	var has_target := not target.is_empty()
+	hud.update_map(me, cam.get_yaw(), facing, _gps_route, has_target,
+		target["pos"] if has_target else Vector3.ZERO, target["color"] if has_target else Color.WHITE)
+	# The top arrow for home/shop (bookings and the story set their own).
+	if has_target and target.has("label") and booking.get_target().is_empty() and not story._has_target:
+		var to: Vector3 = target["pos"] - me
+		var rel := wrapf(atan2(-to.x, -to.z) - cam.get_yaw(), -PI, PI)
+		var left := RoadGraph.path_length(_gps_route) if _gps_route.size() > 1 else Vector2(to.x, to.z).length()
+		hud.set_nav("%s   %d m" % [target["label"], int(left)], target["color"], rel)
+	elif not has_target and booking.get_target().is_empty() and not story._has_target:
+		hud.hide_nav()
 
 
 # --- Pause menu --------------------------------------------------------------
@@ -523,14 +701,14 @@ func respawn_at_home() -> void:
 	player.teleport(spawn["player_pos"])
 	player.face_yaw(spawn["camera_yaw"])
 	motor.place(spawn["motor_pos"], spawn["motor_heading"])
-	motor.set_active(GameState.has_motor())
+	motor.set_active(GameState.motor_available())
 	cam.set_target(player, false)
 	cam.snap_to(spawn["camera_yaw"])
 
 
 func _update_prompt() -> void:
 	var text := ""
-	if hud.refuel_menu.visible or hud.dialog_box.is_open or hud.shop.visible or hud.license_card.visible:
+	if hud.refuel_menu.visible or hud.food_menu.visible or hud.dialog_box.is_open or hud.shop.visible or hud.license_card.visible:
 		hud.set_prompt("")
 		return
 	var story_prompt := story.get_prompt()
@@ -543,6 +721,8 @@ func _update_prompt() -> void:
 			Player.State.ON_FOOT:
 				if GameState.story_done and _player_at_home() and not _near_motor():
 					text = "[E]  Matulog  (End the day)"
+				elif _near_stall():
+					text = "[E]  Sari-sari store  (food & drinks)"
 				elif _near_motor():
 					text = "[F]  Sakay sa motor  (Get on)"
 				else:
@@ -562,7 +742,7 @@ func _update_hud() -> void:
 	hud.set_money(GameState.money)
 	hud.set_clock(GameState.day, GameState.get_time_string())
 	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
-	hud.update_health(not riding, player.health / Player.MAX_HEALTH)
+	_update_gps()
 
 
 static func _flat_dist(a: Vector3, b: Vector3) -> float:

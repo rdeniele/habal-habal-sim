@@ -61,7 +61,9 @@ func _physics_process(delta: float) -> void:
 			_process_knockdown(delta)
 		State.ON_FOOT:
 			_process_walk(delta)
-	health = minf(MAX_HEALTH, health + 1.5 * delta)   # slow health regen
+	# Slow health regen, but only when you've eaten and had water.
+	if GameState.hunger > 20.0 and GameState.thirst > 20.0:
+		health = minf(MAX_HEALTH, health + 1.5 * delta)
 
 
 func _process_walk(delta: float) -> void:
@@ -134,6 +136,10 @@ func teleport(pos: Vector3) -> void:
 	global_position = pos
 	velocity = Vector3.ZERO
 	reset_physics_interpolation()
+
+
+func get_facing_yaw() -> float:
+	return _yaw_pivot.rotation.y
 
 
 func face_yaw(yaw: float) -> void:

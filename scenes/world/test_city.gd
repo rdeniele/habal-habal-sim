@@ -57,6 +57,10 @@ const SPOT_KINDS := ["Sari-sari store", "Carinderia", "Bakery", "School gate", "
 
 ## Filled while building: [{id, name, door: Vector3, front_z: float}]
 var places: Array[Dictionary] = []
+## Road network for the GPS and minimap.
+var road_graph := RoadGraph.new()
+## Where you can buy food & drinks (in front of sari-sari stores, gas station kiosk).
+var food_stalls: Array[Vector3] = []
 ## Pickup/drop-off spots on sidewalks: [{pos, road_dir, street, label}]
 var address_points: Array[Dictionary] = []
 
@@ -88,6 +92,7 @@ func _ready() -> void:
 	_build_backdrop()
 	_flush_multimeshes()
 	_build_address_points()
+	_build_road_graph()
 
 
 # --- Public API --------------------------------------------------------------
@@ -132,6 +137,27 @@ func set_night_glow(amount: float) -> void:
 ## Name of the street at a road line. ns = north-south road.
 func get_street_name(index: int, ns: bool) -> String:
 	return NS_STREETS[index] if ns else EW_STREETS[index]
+
+
+# --- Road graph (GPS) ---------------------------------------------------------
+
+## Grid city: a point at every intersection, a road between neighbors.
+func _build_road_graph() -> void:
+	var ids := {}
+	for i in N + 1:
+		for j in N + 1:
+			ids[Vector2i(i, j)] = road_graph.add_point(get_intersection(i, j))
+	for i in N + 1:
+		for j in N + 1:
+			if i < N:
+				road_graph.add_road(ids[Vector2i(i, j)], ids[Vector2i(i + 1, j)], ROAD_W)
+			if j < N:
+				road_graph.add_road(ids[Vector2i(i, j)], ids[Vector2i(i, j + 1)], ROAD_W)
+
+
+## Bounds of the drivable city (for the full map), as a Rect2 in X/Z.
+func get_map_rect() -> Rect2:
+	return Rect2(-HALF - 10.0, -HALF - 10.0, 2.0 * HALF + 20.0, 2.0 * HALF + 20.0)
 
 
 # --- Addresses (for bookings) ------------------------------------------------
@@ -346,6 +372,8 @@ func _add_window_row(pos: Vector3, size: Vector3, y: float) -> void:
 ## Sari-sari store details: colorful awning, store window with grill, sign board.
 func _add_sari_sari_front(pos: Vector3, w: float, d: float, front: Vector3) -> void:
 	var awning_color := Color(_pick(AWNING_COLORS))
+	var depth := d if front.z != 0.0 else w
+	food_stalls.append(pos + front * (depth * 0.5 + 1.4))
 	if front.z != 0.0:
 		var face := pos + front * (d * 0.5)
 		_mm("box", face + front * 0.7 + Vector3(0, 2.7, 0), Vector3(w * 0.8, 0.1, 1.4), awning_color, Basis(Vector3.RIGHT, 0.25 * front.z))
@@ -431,6 +459,7 @@ func _build_special(id: String, lc: Vector3, front_z: float) -> void:
 				_add_collider(pump, Vector3(0.7, 1.5, 0.5))
 			var kiosk := Vector3(lc.x, 0, front_edge - front_z * (LOT - 2.0))
 			_add_building(kiosk, Vector3(6.0, 3.0, 3.5), Color("#f1faee"), Color("#e63946"), 99)
+			food_stalls.append(kiosk + Vector3(0, 0, front_z * 3.0))   # kiosk sells snacks too
 			door = Vector3(lc.x, 0, canopy_z)   # you "interact" at the pumps
 			label_pos = Vector3(lc.x, 7.0, canopy_z)
 

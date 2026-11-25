@@ -20,6 +20,7 @@ func _ready() -> void:
 	GameState.reset_new_game()
 	GameState.debug_skip_story()
 	GameState.motor_mode = "rent"
+	GameState.rental_out = true
 	GameState.save_slot = TEST_SLOT
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
@@ -70,16 +71,23 @@ func _run() -> void:
 	_check(booking.stage == BookingSystem.Stage.OFFLINE, "offline after last ride")
 	var fares_today := int(GameState.today["fares"])
 
-	# --- End of day (rent paid) ---------------------------------------------
+	# --- Return the rental at the shop (pays the boundary) --------------------
+	var money_before := GameState.money
+	game._park_motor_at("motor_shop")
+	game._on_shop_return()
+	hud.shop.close_shop()
+	_check(money_before - GameState.money == Economy.RENT_PER_DAY, "boundary of %d paid when returning" % Economy.RENT_PER_DAY)
+	_check(not GameState.rental_out and not motor.is_active, "rental returned (motor gone)")
+
+	# --- End of day ----------------------------------------------------------
 	game.respawn_at_home()
 	await _wait(0.3)
-	var money_before := GameState.money
 	game._try_end_day()
 	await _until(func() -> bool: return hud.end_of_day.visible, 4.0)
 	_check(hud.end_of_day.visible, "end of day screen shown")
 	await _wait(0.6)
 	_shot("day_04_summary")
-	_check(money_before - GameState.money == Economy.RENT_PER_DAY, "rent of %d paid" % Economy.RENT_PER_DAY)
+	_check(int(GameState.today["rent_paid"]) == Economy.RENT_PER_DAY, "summary shows boundary paid")
 	_check(fares_today > 0, "earned fares on day 1")
 	hud.end_of_day._dismiss()
 	await _until(func() -> bool: return not game._ending_day, 8.0)
@@ -87,10 +95,14 @@ func _run() -> void:
 	_check(SaveManager.has_save(TEST_SLOT), "auto-saved to slot %d" % TEST_SLOT)
 	_check(int(SaveManager.read_slot(TEST_SLOT).get("day", 0)) == 2, "save says day 2")
 
-	# --- Unpaid rent -> debt -> repossession --------------------------------
+	_check(not motor.is_active, "renter starts the morning without a motor")
+
+	# --- Not returning the rental -> debt -> repossession -------------------
 	for i in 3:
+		GameState.rental_out = true   # rented again this morning...
+		motor.set_active(true)
 		GameState.money = 100
-		await _end_day_quick()
+		await _end_day_quick()        # ...and never returned it
 		print("  day %d: debt=%d unpaid=%d mode=%s" % [GameState.day, GameState.debt, GameState.rent_unpaid_days, GameState.motor_mode])
 		if i < 2:
 			_check(GameState.debt == Economy.RENT_PER_DAY * (i + 1), "debt grows (%d)" % GameState.debt)

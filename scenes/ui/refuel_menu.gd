@@ -67,6 +67,13 @@ func open_menu(fuel: float, tank: float, money: int) -> void:
 	_buttons[2].text = "[3]  Full tank  (%.1f L · ₱%d)" % [space, int(ceil(space * price))]
 	_buttons[2].disabled = space < 0.05
 	visible = true
+	_center_on_screen.call_deferred()
+
+
+## Put the panel in the middle of the screen (after its size is known).
+func _center_on_screen() -> void:
+	reset_size()
+	position = (get_viewport_rect().size - size) * 0.5
 
 
 func choose(index: int) -> void:

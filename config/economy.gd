@@ -19,8 +19,9 @@ const GAS_PRICE_PER_LITER: int = 62      # regular gasoline, approx. Nov 2026
 const FUEL_USE_MULTIPLIER: float = 8.0
 
 # --- Fares -----------------------------------------------------------------
-const BASE_FARE: int = 50
-const PER_KM: int = 12
+const BASE_FARE: int = 15             # fare = BASE_FARE + PER_KM * km ...
+const PER_KM: int = 15
+const MIN_FARE: int = 20              # ...but never less than this (nearest rides pay ₱20)
 const SURGE_MULTIPLIER: float = 1.3      # rush hours (7-9 AM, 5-7 PM) and rain
 const SURGE_HOURS: Array = [[7.0, 9.0], [17.0, 19.0]]   # rush hours (24h clock)
 const TIP_CHANCE_5_STAR: float = 0.25
@@ -39,6 +40,25 @@ const BOOKING_LOW_RATING_SLOWDOWN: float = 0.8
 const LICENSE_FEE: int = 585
 const CLINIC_FEE: int = 500
 const REPAIR_COST_PER_DAMAGE_POINT: int = 40   # damage is 0-100
+
+# --- Food & drinks (sari-sari stores) -------------------------------------
+## hunger / thirst / energy = how much each meter goes up (meters are 0-100).
+const FOOD_ITEMS: Array = [
+	{"name": "Mineral water", "price": 20, "hunger": 0, "thirst": 45, "energy": 0},
+	{"name": "Softdrinks", "price": 25, "hunger": 0, "thirst": 30, "energy": 5},
+	{"name": "3-in-1 coffee", "price": 15, "hunger": 0, "thirst": 5, "energy": 25},
+	{"name": "Pandesal (5 pcs)", "price": 15, "hunger": 15, "thirst": -5, "energy": 0},
+	{"name": "Piaya", "price": 20, "hunger": 20, "thirst": -5, "energy": 5},
+	{"name": "Rice + ulam (meal)", "price": 80, "hunger": 60, "thirst": 0, "energy": 10},
+]
+
+# --- Body needs (per in-game hour) -----------------------------------------
+const HUNGER_PER_HOUR: float = 6.0
+const THIRST_PER_HOUR: float = 9.0      # Bacolod is hot!
+const ENERGY_PER_HOUR: float = 4.0
+const ENERGY_RIDING_EXTRA: float = 2.5  # riding tires you faster
+const REST_ENERGY_PER_HOUR: float = 35.0  # standing still on foot = resting
+const STARVING_HEALTH_PER_SEC: float = 2.0  # health lost per real second at 0 food or water
 
 # --- Time ------------------------------------------------------------------
 const DAY_START_HOUR: float = 7.0
@@ -59,7 +79,7 @@ static func calc_fare(km: float, hour: float) -> int:
 	var fare := BASE_FARE + PER_KM * km
 	if is_surge(hour):
 		fare *= SURGE_MULTIPLIER
-	return int(round(fare))
+	return maxi(MIN_FARE, int(round(fare)))
 
 
 ## Formats an amount like "₱60,000" (or "-₱350").

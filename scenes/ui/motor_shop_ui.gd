@@ -5,6 +5,7 @@ extends ColorRect
 
 signal purchase(motor_id: String, color_index: int, mode: String)   # mode: "buy" / "rent"
 signal repair_pressed
+signal return_pressed   # give back today's rental and pay the boundary
 signal sell_pressed
 signal closed
 
@@ -94,8 +95,9 @@ func _rebuild() -> void:
 	var mode: String = _ctx["mode"]
 	var current_id: String = _ctx["current_id"]
 	var tutorial: bool = _ctx.get("tutorial", false)
+	var rental_out: bool = _ctx.get("rental_out", false)
 	_wallet.text = Economy.format_peso(money)
-	_subtitle.text = "Buy = pay once, yours forever.  Rent = %s/day boundary, paid at end of day." \
+	_subtitle.text = "Buy = pay once, yours forever.  Rent = take it for the day, return it here and pay %s." \
 		% Economy.format_peso(Economy.RENT_PER_DAY)
 
 	var trade_in := 0
@@ -105,7 +107,14 @@ func _rebuild() -> void:
 	for m: Dictionary in Motors.LIST:
 		_rows.add_child(_make_row(m, money, mode, current_id, trade_in))
 
-	# Footer: repair / sell / close
+	# Footer: return rental / repair / sell / close
+	if mode == "rent" and rental_out:
+		var due := Economy.RENT_PER_DAY + int(_ctx.get("debt", 0))
+		var ret := _button(_footer, "Return motor & pay %s" % Economy.format_peso(due), Color("#8338ec"))
+		ret.disabled = not bool(_ctx.get("motor_near", false))
+		if ret.disabled:
+			ret.text = "Bring the rented motor here to return it"
+		ret.pressed.connect(func() -> void: return_pressed.emit())
 	var damage: float = _ctx.get("damage", 0.0)
 	if mode != "none" and damage >= 1.0:
 		var cost := int(ceil(damage)) * Economy.REPAIR_COST_PER_DAMAGE_POINT
@@ -154,8 +163,9 @@ func _make_row(m: Dictionary, money: int, mode: String, current_id: String, trad
 	_label(name_row, str(m["name"]), 19, INK)
 	var tier := _label(name_row, "  %s" % str(m["tier"]).to_upper(), 12, TEAL)
 	tier.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	if id == current_id and mode != "none":
-		var tag := _label(name_row, "   YOURS" if mode == "own" else "   RENTING", 12, Color("#e0a800"))
+	var rental_out: bool = _ctx.get("rental_out", false)
+	if id == current_id and (mode == "own" or (mode == "rent" and rental_out)):
+		var tag := _label(name_row, "   YOURS" if mode == "own" else "   RENTED TODAY", 12, Color("#e0a800"))
 		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_label(info, "Top %d km/h  ·  Accel %s  ·  Handling %s  ·  %d km/L  ·  %.1f L tank" % [
 		int(m["top_speed_kmh"]), _stars(float(m["acceleration"]), 3.4, 5.4),
@@ -194,8 +204,10 @@ func _make_row(m: Dictionary, money: int, mode: String, current_id: String, trad
 	buy.custom_minimum_size.x = 210
 	buy.disabled = owns_this or net > money
 	buy.pressed.connect(func() -> void: purchase.emit(id, chosen, "buy"))
-	var rent := _button(buy_col, "Rent %s/day" % Economy.format_peso(Economy.RENT_PER_DAY), Color("#ff8c42"))
-	rent.disabled = mode == "rent" and id == current_id
+	var rent := _button(buy_col, "Rent today (%s)" % Economy.format_peso(Economy.RENT_PER_DAY), Color("#ff8c42"))
+	rent.disabled = mode == "rent" and rental_out
+	if rent.disabled:
+		rent.text = "Return rental first"
 	rent.pressed.connect(func() -> void: purchase.emit(id, chosen, "rent"))
 	return card
 

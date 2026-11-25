@@ -35,6 +35,8 @@ var steer_input := 0.0
 var last_accel := 0.0     # m/s^2 this frame (negative = braking), for passenger comfort
 var passenger: Node3D = null
 var input_enabled := true   # false while a dialog/menu is open
+var drowsiness := 0.0       # 0-1, set by Needs when energy is low: the motor drifts
+var _drift_t := 0.0
 var is_active := true       # false = hidden (you don't have a motor yet)
 
 var _lean_pivot: Node3D
@@ -197,6 +199,10 @@ func _physics_process(delta: float) -> void:
 	var pushing := fuel_liters <= 0.0 and throttle > 0.0
 	if fuel_liters <= 0.0:
 		throttle = 0.0
+	# Sleepy rider: slow side-to-side drift you have to correct.
+	if drowsiness > 0.0 and is_ridden:
+		_drift_t += delta
+		steer = clampf(steer + sin(_drift_t * 1.3) * 0.45 * drowsiness, -1.0, 1.0)
 	throttle_input = throttle
 	var start_speed := speed
 	steer_input = steer

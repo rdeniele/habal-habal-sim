@@ -71,6 +71,10 @@ func _enter_tree() -> void:
 	_buttons("option_2", [JOY_BUTTON_DPAD_DOWN])
 	_keys("option_3", [KEY_3])
 	_buttons("option_3", [JOY_BUTTON_DPAD_LEFT])
+	_keys("option_4", [KEY_4])
+	_buttons("option_4", [JOY_BUTTON_DPAD_RIGHT])
+	_keys("option_5", [KEY_5])
+	_keys("option_6", [KEY_6])
 
 	# --- Debug (handy while building the game) ---
 	_keys("debug_respawn", [KEY_F8])

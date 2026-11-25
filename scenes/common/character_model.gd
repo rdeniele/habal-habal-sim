@@ -10,6 +10,8 @@ var leg_l: Node3D
 var leg_r: Node3D
 var arm_l: Node3D
 var arm_r: Node3D
+var _helmet: Node3D
+var _hair: MeshInstance3D
 
 
 ## Builds the body. Pass helmet color with alpha 0 for "no helmet" (shows hair instead).
@@ -25,13 +27,31 @@ func build(jacket: Color, pants: Color, helmet: Color, skin: Color = SKIN) -> vo
 	arm_l = _limb(Vector3(-0.32, 1.48, 0.0), Vector3(0.14, 0.62, 0.16), jacket, skin)
 	arm_r = _limb(Vector3(0.32, 1.48, 0.0), Vector3(0.14, 0.62, 0.16), jacket, skin)
 
-	# Head
+	# Head + hair (hair hides under the helmet)
 	LowPoly.box(self, Vector3(0.28, 0.3, 0.28), skin, Vector3(0, 1.68, 0))
-	if helmet.a > 0.0:
-		LowPoly.box(self, Vector3(0.38, 0.34, 0.4), helmet, Vector3(0, 1.75, 0.01))
-		LowPoly.box(self, Vector3(0.3, 0.13, 0.04), Color("#1b1f2a"), Vector3(0, 1.69, -0.2))  # visor
-	else:
-		LowPoly.box(self, Vector3(0.3, 0.1, 0.3), Color("#1a1410"), Vector3(0, 1.85, 0.01))  # hair
+	_hair = LowPoly.box(self, Vector3(0.3, 0.1, 0.3), Color("#1a1410"), Vector3(0, 1.85, 0.01))
+	# Helmet group (can be put on / taken off)
+	_helmet = Node3D.new()
+	_helmet.name = "Helmet"
+	add_child(_helmet)
+	var helmet_color := helmet if helmet.a > 0.0 else Color("#f8f9fa")
+	LowPoly.box(_helmet, Vector3(0.38, 0.34, 0.4), helmet_color, Vector3(0, 1.75, 0.01))
+	LowPoly.box(_helmet, Vector3(0.3, 0.13, 0.04), Color("#1b1f2a"), Vector3(0, 1.69, -0.2))  # visor
+	set_helmet(helmet.a > 0.0)
+
+
+## Put the helmet on or take it off. `pop` = little bounce animation.
+func set_helmet(on: bool, pop: bool = false) -> void:
+	_helmet.visible = on
+	_hair.visible = not on
+	if on and pop:
+		_helmet.scale = Vector3.ONE * 1.6
+		create_tween().tween_property(_helmet, "scale", Vector3.ONE, 0.25) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func has_helmet() -> bool:
+	return _helmet.visible
 
 
 ## Walking/running swing. `phase` keeps increasing while moving, `amount` 0..1.

@@ -23,6 +23,9 @@ On motor
   E  refuel (stop at a gas pump)
 Sakay app
   Tab  phone      1 / 2  accept / decline
+Map & needs
+  M  full map     E  buy food at sari-sari
+  Stand still on foot to rest (energy)
 Camera
   C  change view  Mouse  look around
 Other
@@ -47,6 +50,15 @@ var _fuel_fill: StyleBoxFlat
 var _status_label: Label
 var _health_panel: PanelContainer
 var _health_bar: ProgressBar
+var _food_bar: ProgressBar
+var _water_bar: ProgressBar
+var _energy_bar: ProgressBar
+var _resting_label: Label
+var _full_map_layer: ColorRect
+
+var minimap: Minimap
+var full_map: Minimap
+var food_menu: FoodMenu
 var _toast_time := 0.0
 var _nav_panel: PanelContainer
 var _nav_arrow: NavArrow
@@ -164,16 +176,29 @@ func _ready() -> void:
 	bottom.alignment = BoxContainer.ALIGNMENT_END
 	column.add_child(bottom)
 
+	# Minimap (bottom-left)
+	minimap = Minimap.new()
+	minimap.custom_minimum_size = Vector2(200, 200)
+	minimap.size_flags_vertical = Control.SIZE_SHRINK_END
+	bottom.add_child(minimap)
+
+	# Body needs: health, food, water, energy
 	_health_panel = _panel(bottom)
 	_health_panel.size_flags_vertical = Control.SIZE_SHRINK_END
 	var hb := VBoxContainer.new()
+	hb.add_theme_constant_override("separation", 2)
 	_health_panel.add_child(hb)
-	_label(hb, "HEALTH", 13, Color(0.8, 0.85, 0.9))
-	_health_bar = _bar(hb, Color("#ef476f"))
+	_health_bar = _need_bar(hb, "HEALTH", Color("#ef476f"))
+	_food_bar = _need_bar(hb, "FOOD", Color("#f4a261"))
+	_water_bar = _need_bar(hb, "WATER", Color("#4cc9f0"))
+	_energy_bar = _need_bar(hb, "ENERGY", Color("#ffd166"))
+	_resting_label = _label(hb, "Resting...  (energy coming back)", 12, Color("#b8f2e6"))
+	_resting_label.visible = false
 
 	_spacer(bottom, true)
 
 	_vehicle_panel = _panel(bottom)
+	_vehicle_panel.size_flags_vertical = Control.SIZE_SHRINK_END
 	var vb := VBoxContainer.new()
 	_vehicle_panel.add_child(vb)
 	_motor_label = _label(vb, "Motor", 14, Color(0.8, 0.85, 0.9))
@@ -227,6 +252,24 @@ func _ready() -> void:
 	add_child(phone)
 	refuel_menu = RefuelMenu.new()
 	add_child(refuel_menu)
+	food_menu = FoodMenu.new()
+	add_child(food_menu)
+
+	# Full-screen map (M)
+	_full_map_layer = ColorRect.new()
+	_full_map_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_full_map_layer.color = Color(0, 0, 0, 0.55)
+	_full_map_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_full_map_layer.visible = false
+	add_child(_full_map_layer)
+	var map_center := CenterContainer.new()
+	map_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_full_map_layer.add_child(map_center)
+	full_map = Minimap.new()
+	full_map.full = true
+	full_map.custom_minimum_size = Vector2(620, 620)
+	map_center.add_child(full_map)
 	shop = MotorShopUI.new()
 	add_child(shop)
 	dialog_box = DialogBox.new()
@@ -348,7 +391,7 @@ func show_caption(text: String) -> void:
 
 ## True when any clickable/blocking UI is open.
 func is_menu_open() -> bool:
-	return dialog_box.is_open or license_card.visible or shop.visible or refuel_menu.visible \
+	return dialog_box.is_open or license_card.visible or shop.visible or refuel_menu.visible or food_menu.visible \
 		or end_of_day.visible or pause_menu.visible or (phone.is_open and phone.has_mouse)
 
 
@@ -374,9 +417,54 @@ func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_n
 	_status_label.visible = status != ""
 
 
-func update_health(is_shown: bool, ratio: float) -> void:
-	_health_panel.visible = is_shown
-	_health_bar.value = ratio * 100.0
+## Health / food / water / energy bars (all 0..1).
+func update_needs(health: float, food: float, water: float, energy: float, resting: bool) -> void:
+	_health_bar.value = health * 100.0
+	_food_bar.value = food * 100.0
+	_water_bar.value = water * 100.0
+	_energy_bar.value = energy * 100.0
+	_resting_label.visible = resting and energy < 0.99
+
+
+## Feed the minimap + full map. Called every frame by the game.
+func update_map(center: Vector3, view_yaw: float, facing_yaw: float, route: PackedVector3Array,
+		has_target: bool, target: Vector3, target_color: Color) -> void:
+	for m: Minimap in [minimap, full_map]:
+		m.center = center
+		m.view_yaw = view_yaw
+		m.facing_yaw = facing_yaw
+		m.route = route
+		m.has_target = has_target
+		m.target = target
+		m.target_color = target_color
+	minimap.refresh()
+	if _full_map_layer.visible:
+		full_map.refresh()
+
+
+func set_map_world(world: TestCity) -> void:
+	minimap.world = world
+	full_map.world = world
+
+
+func toggle_full_map() -> void:
+	_full_map_layer.visible = not _full_map_layer.visible
+
+
+func is_full_map_open() -> bool:
+	return _full_map_layer.visible
+
+
+## A small labeled bar for the needs panel.
+func _need_bar(parent: Control, title: String, color: Color) -> ProgressBar:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var l := _label(row, title, 11, Color(0.8, 0.85, 0.9))
+	l.custom_minimum_size.x = 58
+	var bar := _bar(row, color)
+	bar.custom_minimum_size = Vector2(150, 10)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return bar
 
 
 # --- Small UI builders -------------------------------------------------------
