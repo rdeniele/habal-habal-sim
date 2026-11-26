@@ -23,15 +23,36 @@ var _phase := 0.0
 
 
 ## Builds a random-looking passenger.
-func build(rng: RandomNumberGenerator, passenger_name: String) -> void:
+const FEMALE_NAMES := ["Maria", "Bea", "Nening", "Joy", "Angel", "Kristine", "Ella", "Gina", "Jessa",
+	"Liza", "Inday", "Cha-cha", "Rosa", "Mae", "Tess"]
+const MALE_NAMES := ["Jun-jun", "Carlo", "Mark", "Paolo", "Rommel", "Tonton", "Dodong", "Migs",
+	"Jomar", "Ben", "Rey", "Nonoy", "Kiko"]
+
+
+## Is this passenger type a woman, a man, or either (random)?
+static func is_female_for(kind: String, rng: RandomNumberGenerator) -> bool:
+	match kind:
+		"tita", "lola":
+			return true
+		"worker", "seaman":
+			return false
+	return rng.randf() < 0.5
+
+
+static func random_name(female: bool, rng: RandomNumberGenerator) -> String:
+	var names: Array = FEMALE_NAMES if female else MALE_NAMES
+	return names[rng.randi() % names.size()]
+
+
+## Builds a passenger who looks like their type (kind = personality id, e.g. "lola").
+func build(rng: RandomNumberGenerator, passenger_name: String, kind: String = "", female: bool = false) -> void:
 	display_name = passenger_name
 	name = "Passenger_" + passenger_name
 	model = CharacterModel.new()
 	add_child(model)
-	model.build(
-		Color(JACKETS[rng.randi() % JACKETS.size()]),
-		Color(PANTS[rng.randi() % PANTS.size()]),
-		Color(HELMETS[rng.randi() % HELMETS.size()]))
+	var look := CharacterModel.random_look(rng, female, kind)
+	look["helmet"] = Color(HELMETS[rng.randi() % HELMETS.size()])
+	model.build_look(look)
 	model.set_helmet(false)   # the rider hands them a spare helmet when they get on
 
 
@@ -43,6 +64,15 @@ func build_with_colors(person_name: String, jacket: Color, pants: Color, helmet:
 	model = CharacterModel.new()
 	add_child(model)
 	model.build(jacket, pants, helmet)
+
+
+## Build a story character from a full look (see CharacterModel.random_look for keys).
+func build_with_look(person_name: String, look: Dictionary) -> void:
+	display_name = person_name
+	name = "NPC_" + person_name.replace(" ", "_")
+	model = CharacterModel.new()
+	add_child(model)
+	model.build_look(look)
 
 
 ## Floating name tag above the head.

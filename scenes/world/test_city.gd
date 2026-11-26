@@ -1,5 +1,5 @@
 class_name TestCity
-extends Node3D
+extends GameWorld
 ## Placeholder low-poly city used until the real Bacolod OSM map (Milestone 6).
 ##
 ## Layout: an N x N grid of city blocks separated by roads.
@@ -55,21 +55,7 @@ const SPOT_KINDS := ["Sari-sari store", "Carinderia", "Bakery", "School gate", "
 	"Apartment", "Chapel", "Waiting shed", "Pharmacy", "Internet cafe", "Lechon manok stall",
 	"Boarding house", "Vulcanizing shop", "Piaya store"]
 
-## Filled while building: [{id, name, door: Vector3, front_z: float}]
-var places: Array[Dictionary] = []
-## Road network for the GPS and minimap.
-var road_graph := RoadGraph.new()
-## Where you can buy food & drinks (in front of sari-sari stores, gas station kiosk).
-var food_stalls: Array[Vector3] = []
-## Pickup/drop-off spots on sidewalks: [{pos, road_dir, street, label}]
-var address_points: Array[Dictionary] = []
-
-## Lighting handles (the DayCycle changes these over the day).
-var sun: DirectionalLight3D
-var environment: Environment
-var sky_material: ProceduralSkyMaterial
-## Materials that glow at night (windows, street lamps). Set with set_night_glow().
-var _glow_materials: Array[StandardMaterial3D] = []
+## (places, address_points, food_stalls, road_graph, lighting: see GameWorld)
 
 var _rng := RandomNumberGenerator.new()
 var _collision: StaticBody3D
@@ -83,7 +69,7 @@ func _ready() -> void:
 	_collision.name = "CityCollision"
 	add_child(_collision)
 
-	_build_environment()
+	build_environment()
 	_build_ground()
 	_build_roads()
 	_build_blocks()
@@ -96,13 +82,6 @@ func _ready() -> void:
 
 
 # --- Public API --------------------------------------------------------------
-
-func get_place(id: String) -> Dictionary:
-	for p in places:
-		if p["id"] == id:
-			return p
-	return {}
-
 
 ## Where the player and motor start (outside the house).
 func get_spawn() -> Dictionary:
@@ -125,13 +104,6 @@ func get_school_yard_center() -> Vector3:
 ## World position of the intersection of road lines (i = north-south road, j = east-west road).
 func get_intersection(i: int, j: int) -> Vector3:
 	return Vector3(-HALF + CELL * i, 0, -HALF + CELL * j)
-
-
-## 0 = day (no glow), 1 = full night glow for windows and street lamps.
-func set_night_glow(amount: float) -> void:
-	for m in _glow_materials:
-		# Squared so the glow fades in gently around sunset instead of all at once.
-		m.emission_energy_multiplier = amount * amount * float(m.get_meta("max_energy", 1.0))
 
 
 ## Name of the street at a road line. ns = north-south road.
@@ -204,43 +176,6 @@ func _build_address_points() -> void:
 
 
 # --- Environment -------------------------------------------------------------
-
-func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_material = sky_mat
-	sky_mat.sky_top_color = Color("#4f9fe0")
-	sky_mat.sky_horizon_color = Color("#cfe8f5")
-	sky_mat.ground_horizon_color = Color("#cfe8f5")
-	sky_mat.ground_bottom_color = Color("#6b8f71")
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-
-	var env := Environment.new()
-	environment = env
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.9
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.fog_enabled = true
-	env.fog_light_color = Color("#cfe3ee")
-	env.fog_density = 0.0018
-	env.fog_sky_affect = 0.25
-
-	var world_env := WorldEnvironment.new()
-	world_env.environment = env
-	add_child(world_env)
-
-	# The sun. Milestone 4 will rotate this over the day.
-	sun = DirectionalLight3D.new()
-	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(-52, -35, 0)
-	sun.light_energy = 1.25
-	sun.light_color = Color("#fff4e0")
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 110.0
-	add_child(sun)
-
 
 func _build_ground() -> void:
 	# Land from the coast (west) to far east, plus a big collision box.
@@ -484,7 +419,8 @@ func _build_special(id: String, lc: Vector3, front_z: float) -> void:
 			label_pos = pos + Vector3(0, size.y + 2.0, 0)
 
 	LowPoly.label(self, display_name, label_pos, 1.1)
-	places.append({"id": id, "name": display_name, "door": door, "front_z": front_z})
+	places.append({"id": id, "type": id, "name": display_name, "door": door, "front_z": front_z,
+		"front": Vector3(0, 0, front_z)})
 
 
 func _add_front_door(pos: Vector3, size: Vector3, front_z: float, color: Color) -> void:
@@ -665,7 +601,7 @@ func _glow_material(glow_color: Color, max_energy: float) -> StandardMaterial3D:
 	m.emission = glow_color
 	m.emission_energy_multiplier = 0.0
 	m.set_meta("max_energy", max_energy)
-	_glow_materials.append(m)
+	glow_materials.append(m)
 	return m
 
 

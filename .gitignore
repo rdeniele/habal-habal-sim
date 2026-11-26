@@ -10,3 +10,6 @@
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Raw OpenStreetMap downloads (big; regenerate with tools/osm_download.sh)
+data/osm_raw/

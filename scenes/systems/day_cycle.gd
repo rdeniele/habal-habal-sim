@@ -20,13 +20,13 @@ const KEYS := [
 const SUNRISE := 5.6
 const SUNSET := 19.0
 
-var world: TestCity
+var world: GameWorld
 var motor: Motorcycle
 var cam: FollowCamera
 var night_amount := 0.0   # 0 = day, 1 = night (other systems can read this)
 
 
-func setup(p_world: TestCity, p_motor: Motorcycle, p_cam: FollowCamera) -> void:
+func setup(p_world: GameWorld, p_motor: Motorcycle, p_cam: FollowCamera) -> void:
 	world = p_world
 	motor = p_motor
 	cam = p_cam

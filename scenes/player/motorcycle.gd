@@ -20,7 +20,7 @@ const MAX_LEAN := 0.5            # radians (~29 degrees)
 const WHEEL_RADIUS := 0.27
 const MIX_RATE := 22050.0        # placeholder engine/horn sound sample rate
 const PUSH_SPEED := 1.6          # m/s when pushing the motor with no gas
-const PASSENGER_SEAT := Vector3(0, 0.02, 0.6)
+const PASSENGER_SEAT := Vector3(0, -0.07, 0.62)
 
 var motor_id: String = ""
 var stats: Dictionary = {}
@@ -356,7 +356,7 @@ func _build_model() -> void:
 	_lean_pivot.add_child(_rider)
 	_rider.build(Player.JACKET_COLOR, Player.PANTS_COLOR, Player.HELMET_COLOR)
 	_rider.pose_sit()
-	_rider.position = Vector3(0, -0.04, 0.28)
+	_rider.position = Vector3(0, -0.1, 0.3)
 	_rider.visible = false
 
 

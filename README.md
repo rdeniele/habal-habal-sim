@@ -76,7 +76,7 @@ config/economy.gd      ALL prices, fares, rates (tweak here)
 config/motors.gd       motorcycle list + stats
 autoload/              always-loaded scripts: InputSetup (controls), GameState (wallet, day...)
 scenes/main/           the main game scene that connects everything
-scenes/world/          the test city (real Bacolod map comes in Milestone 6)
+scenes/world/          Bacolod City (from OpenStreetMap), the old test city, road graph, textures
 scenes/player/         on-foot player, motorcycle, follow camera
 scenes/common/         low-poly model helpers (boxes, character model)
 scenes/story/          story / tutorial script (intro, driving school, license, first motor)
@@ -84,7 +84,25 @@ scenes/systems/        booking system (Sakay app logic), GPS target marker
 scenes/npc/            passengers
 scenes/ui/             HUD, Sakay phone app, gas pump menu, dialog box, license card, motor shop
 data/dialog/           passenger personalities + lines (Hiligaynon, Bisaya, Tagalog, English)
+data/map/bacolod/      converted map: meta.json, graph.json (roads), chunks/*.json (200 m tiles)
+tools/                 osm_download.sh (get OSM data), osm_convert.py (make the game map)
 tests/                 automated tests (see below)
+```
+
+## The Bacolod map
+
+The city is real: roads, buildings, parks, rivers and the coastline come from OpenStreetMap
+(© OpenStreetMap contributors, ODbL). The world origin (0, 0) is the Public Plaza.
+Landmarks: San Sebastian Cathedral, Public Plaza, Provincial Capitol, SM City, Ayala Capitol Central.
+Where OSM has no buildings mapped, the converter adds simple "filler" houses and stores so streets
+aren't empty. To rebuild the map (e.g. after OSM updates), in Git Bash:
+
+```powershell
+bash tools/osm_download.sh
+```
+
+```powershell
+python tools/osm_convert.py
 ```
 
 ## Automated tests
@@ -112,6 +130,14 @@ godot --path . res://tests/day_test.tscn
 godot --path . res://tests/feedback_test.tscn
 ```
 
+```powershell
+godot --path . res://tests/map_test.tscn
+```
+
+```powershell
+godot --path . res://tests/character_test.tscn
+```
+
 Saves and settings live in `%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\` (`saves/slot_1.json` ... and `settings.cfg`).
 
 Most models are built from code (boxes/cylinders) as placeholders, so everything is plain text and easy to change.
@@ -124,7 +150,9 @@ Most models are built from code (boxes/cylinders) as placeholders, so everything
 4. ✅ Day cycle & saves – time of day, last ride, end-of-day summary, saves, menus, settings
 4.5 ✅ Playtest fixes – GPS + minimap, ₱20 minimum fare, passenger helmets, 11 passenger types, daily rental
     return, hunger/thirst/energy + sari-sari stores, break mode, day length setting
-5. Real Bacolod map from OpenStreetMap (roads, landmarks, GPS on real streets) + new early-2000s low-poly look
+5. ✅ Real Bacolod map from OpenStreetMap (roads, landmarks, GPS on real streets) + early-2000s textured low-poly look
+   + new early-2000s style characters: tapered limbs with elbows/knees, painted pixel faces,
+     hairstyles, outfits by passenger type (lola, nurse, student, worker...), Filipino skin tones
 6. Traffic, traffic lights, people walking around, road rage & fights (on the real roads)
 7. Polish & Windows export
 

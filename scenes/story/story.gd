@@ -29,7 +29,7 @@ const PASS_COMFORT := 60.0
 var active := false
 
 var game: Node   # the main game script (for shop / respawn helpers)
-var world: TestCity
+var world: GameWorld
 var player: Player
 var motor: Motorcycle
 var hud: HUD
@@ -62,7 +62,7 @@ func _ready() -> void:
 	add_child(_sfx)
 
 
-func setup(p_game: Node, p_world: TestCity, p_player: Player, p_motor: Motorcycle, p_hud: HUD,
+func setup(p_game: Node, p_world: GameWorld, p_player: Player, p_motor: Motorcycle, p_hud: HUD,
 		p_cam: FollowCamera, p_booking: BookingSystem) -> void:
 	game = p_game
 	world = p_world
@@ -124,7 +124,10 @@ func _driving_school() -> void:
 	# Instructor waiting in the yard + the yellow school motor
 	_jojo = Passenger.new()
 	game.add_child(_jojo)
-	_jojo.build_with_colors(INSTRUCTOR, Color("#3d5a80"), Color("#2d3047"), Color("#f8f9fa"))
+	_jojo.build_with_look(INSTRUCTOR, {
+		"body": "male", "skin": Color("#c68c5a"), "hair": "short", "hair_color": Color("#1a1410"),
+		"top": "polo", "top_color": Color("#3d5a80"), "bottom": "pants", "bottom_color": Color("#2d3047"),
+		"helmet": Color("#f8f9fa")})
 	_jojo.add_name_tag("Sir Jojo · Instructor")
 	_jojo.global_position = _yard_c + Vector3(7.0, 0, -9.0)
 	_jojo.face(door)
@@ -300,15 +303,24 @@ func _reset_training() -> void:
 	await hud.fade_in(0.4)
 
 
-## Around the school block on real roads, then back into the yard.
+## A loop on real roads around the school (from the road graph), then back into the yard.
+## Picks road points 90-200 m away in 4 directions, ordered around the yard.
 func _training_route() -> Array[Vector3]:
-	var bx := TestCity.SCHOOL_BLOCK.x
-	var bz := TestCity.SCHOOL_BLOCK.y
-	var nw := world.get_intersection(bx, bz)
-	var ne := world.get_intersection(bx + 1, bz)
-	var se := world.get_intersection(bx + 1, bz + 1)
-	var sw := world.get_intersection(bx, bz + 1)
-	return [nw + Vector3(12, 0, 16), nw, ne, se, sw, nw + Vector3(0, 0, 26), _track_point(90.0)]
+	var by_quadrant := {}
+	for p in world.road_graph.points_near(_yard_c, 200.0):
+		var d := _flat(p, _yard_c)
+		if d < 90.0:
+			continue
+		var ang := atan2(p.z - _yard_c.z, p.x - _yard_c.x)
+		var q := int(floor((ang + PI) / (PI * 0.5))) % 4
+		if not by_quadrant.has(q) or absf(d - 140.0) < absf(_flat(by_quadrant[q], _yard_c) - 140.0):
+			by_quadrant[q] = p
+	var route: Array[Vector3] = []
+	for q in [2, 3, 0, 1]:   # go around the yard
+		if by_quadrant.has(q):
+			route.append(by_quadrant[q])
+	route.append(_track_point(90.0))
+	return route
 
 
 func _track_point(degrees: float) -> Vector3:
@@ -434,6 +446,7 @@ func _travel(caption: String, pos: Vector3, yaw: float) -> void:
 	if player.state == Player.State.RIDING:
 		motor.set_ridden(false)
 		player.set_riding(false)
+	world.update_streaming(pos, true)
 	player.teleport(pos + Vector3(0, 0.2, 0))
 	player.face_yaw(yaw)
 	cam.set_target(player, false)
@@ -445,13 +458,24 @@ func _travel(caption: String, pos: Vector3, yaw: float) -> void:
 func _spawn_nanay() -> void:
 	var home := world.get_place("home")
 	var door: Vector3 = home["door"]
-	var fz: float = home["front_z"]
+	var front: Vector3 = home["front"]
+	var side := Vector3(-front.z, 0, front.x)
 	_nanay = Passenger.new()
 	game.add_child(_nanay)
-	_nanay.build_with_colors("Nanay", Color("#e07a9b"), Color("#5c4d7d"), Color(0, 0, 0, 0))
+	_nanay.build_with_look("Nanay", {
+		"body": "female", "skin": Color("#b97d4f"), "hair": "bun", "hair_color": Color("#6b6b6b"),
+		"top": "dress", "top_color": Color("#e07a9b"), "bottom": "skirt", "bottom_color": Color("#e07a9b"),
+		"age": "old", "helmet": Color(0, 0, 0, 0)})
 	_nanay.add_name_tag("Nanay")
-	_nanay.global_position = door + Vector3(1.4, 0, 0)
-	_nanay.face(door + Vector3(1.4, 0, fz * 3.0))
+	# Nanay stands a couple of steps away; you face her and the camera looks from the side
+	# so both of you are in view.
+	var nanay_pos := door + side * 2.2 + front * 0.6
+	_nanay.global_position = nanay_pos
+	_nanay.face(player.global_position)
+	var to_nanay := nanay_pos - player.global_position
+	var yaw := atan2(-to_nanay.x, -to_nanay.z)
+	player.face_yaw(yaw)
+	cam.snap_to(yaw + 0.7)
 
 
 func _sleep(seconds: float) -> void:

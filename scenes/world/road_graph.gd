@@ -4,22 +4,80 @@ extends RefCounted
 ## Used by the GPS (shortest route) and the minimap (drawing roads).
 ## The test city builds a grid; the real Bacolod map (Milestone 6) will build it from OSM.
 
+const CELL := 100.0   # spatial grid cell (meters) for fast "what's near me" lookups
+
 var _astar := AStar3D.new()
 var _points: Array[Vector3] = []
-## Each segment: {"a": id, "b": id, "width": meters}
+## Each segment: {"a": id, "b": id, "width": meters, "major": bool}
 var segments: Array[Dictionary] = []
+var _seg_grid: Dictionary = {}     # Vector2i cell -> Array[int] segment indexes
+var _point_grid: Dictionary = {}   # Vector2i cell -> Array[int] point ids
 
 
 func add_point(pos: Vector3) -> int:
 	var id := _points.size()
 	_points.append(Vector3(pos.x, 0, pos.z))
 	_astar.add_point(id, _points[id])
+	var cell := _cell_of(_points[id])
+	if not _point_grid.has(cell):
+		_point_grid[cell] = []
+	(_point_grid[cell] as Array).append(id)
 	return id
 
 
-func add_road(a: int, b: int, width: float) -> void:
+func add_road(a: int, b: int, width: float, major: bool = false) -> void:
 	_astar.connect_points(a, b, true)
-	segments.append({"a": a, "b": b, "width": width})
+	var idx := segments.size()
+	segments.append({"a": a, "b": b, "width": width, "major": major})
+	# register the segment in every grid cell it passes through
+	var pa := _points[a]
+	var pb := _points[b]
+	var steps := maxi(1, int(pa.distance_to(pb) / (CELL * 0.5)))
+	var seen := {}
+	for i in steps + 1:
+		var cell := _cell_of(pa.lerp(pb, float(i) / steps))
+		if seen.has(cell):
+			continue
+		seen[cell] = true
+		if not _seg_grid.has(cell):
+			_seg_grid[cell] = []
+		(_seg_grid[cell] as Array).append(idx)
+
+
+func _cell_of(p: Vector3) -> Vector2i:
+	return Vector2i(floori(p.x / CELL), floori(p.z / CELL))
+
+
+## Indexes of road segments within about `radius` of `center`.
+func segments_near(center: Vector3, radius: float) -> Array[int]:
+	var out: Array[int] = []
+	var seen := {}
+	var c := _cell_of(center)
+	var r := ceili(radius / CELL)
+	for x in range(c.x - r, c.x + r + 1):
+		for z in range(c.y - r, c.y + r + 1):
+			for idx: int in _seg_grid.get(Vector2i(x, z), []):
+				if not seen.has(idx):
+					seen[idx] = true
+					out.append(idx)
+	return out
+
+
+## Road points within `radius` of `center`.
+func points_near(center: Vector3, radius: float) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var c := _cell_of(center)
+	var r := ceili(radius / CELL)
+	for x in range(c.x - r, c.x + r + 1):
+		for z in range(c.y - r, c.y + r + 1):
+			for id: int in _point_grid.get(Vector2i(x, z), []):
+				if _points[id].distance_to(Vector3(center.x, 0, center.z)) <= radius:
+					out.append(_points[id])
+	return out
+
+
+func point_count() -> int:
+	return _points.size()
 
 
 func get_point(id: int) -> Vector3:
@@ -72,7 +130,11 @@ static func path_length(path: PackedVector3Array) -> float:
 func _nearest_segment(p: Vector3) -> Dictionary:
 	var best: Dictionary = segments[0]
 	var best_d := INF
-	for seg in segments:
+	var candidates := segments_near(p, CELL)
+	if candidates.is_empty():
+		candidates = segments_near(p, CELL * 6.0)
+	for idx in candidates:
+		var seg: Dictionary = segments[idx]
 		var d := p.distance_squared_to(_project(p, seg))
 		if d < best_d:
 			best_d = d

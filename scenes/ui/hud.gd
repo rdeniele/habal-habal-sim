@@ -442,13 +442,15 @@ func update_map(center: Vector3, view_yaw: float, facing_yaw: float, route: Pack
 		full_map.refresh()
 
 
-func set_map_world(world: TestCity) -> void:
+func set_map_world(world: GameWorld) -> void:
 	minimap.world = world
 	full_map.world = world
 
 
 func toggle_full_map() -> void:
 	_full_map_layer.visible = not _full_map_layer.visible
+	if _full_map_layer.visible:
+		full_map.redraw_roads()
 
 
 func is_full_map_open() -> bool:

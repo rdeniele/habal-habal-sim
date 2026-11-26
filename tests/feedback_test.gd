@@ -103,7 +103,7 @@ func _run() -> void:
 	GameState.energy = 0.0
 	await _until(func() -> bool: return game._ending_day, 3.0)
 	await _until(func() -> bool: return not game._ending_day, 10.0)
-	var clinic: Vector3 = game.world.get_place("clinic")["door"]
+	var clinic: Vector3 = game.world.nearest_place("clinic", player.global_position)["door"]
 	_check(Story._flat(player.global_position, clinic) < 3.0, "woke up at the clinic")
 	_check(money - GameState.money == Economy.CLINIC_FEE, "paid the clinic fee")
 

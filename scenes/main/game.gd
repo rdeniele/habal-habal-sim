@@ -21,8 +21,9 @@ const PASS_OUT_HOUR := 26.0       # 2:00 AM (next day): you fall asleep wherever
 const MAIN_MENU := "res://scenes/main_menu/main_menu.tscn"
 const STALL_RADIUS := 2.6         # how close to stand to a sari-sari store
 const GPS_REFRESH := 0.4          # seconds between GPS route updates
+const BOUNDS_CHECK := 0.25        # seconds between out-of-bounds checks
 
-@onready var world: TestCity = $World
+@onready var world: GameWorld = $World
 @onready var player: Player = $Player
 @onready var motor: Motorcycle = $Motorcycle
 @onready var cam: FollowCamera = $CameraRig
@@ -35,6 +36,10 @@ var needs: Needs
 var _gps_route := PackedVector3Array()
 var _gps_timer := 0.0
 var _gps_goal := ""               # "" / "home" / "shop": where the day-end GPS points
+var _stream_timer := 0.0
+var _bounds_timer := 0.0
+var _last_valid := Vector3.ZERO   # last in-bounds spot (respawn point if you leave the city)
+var _returning := false
 var _sfx: AudioStreamPlayer
 var _last_ui_open := false
 var _ending_day := false
@@ -93,6 +98,7 @@ func _morning_message() -> void:
 func _physics_process(delta: float) -> void:
 	if not _ending_day:
 		GameState.advance_time(delta)
+	_stream_and_bounds(delta)
 	# Stayed out too late: you fall asleep and wake up at home.
 	if GameState.story_done and GameState.time_hours >= PASS_OUT_HOUR and not _ending_day:
 		_end_day(true)
@@ -245,8 +251,10 @@ func _on_out_of_fuel() -> void:
 
 # --- Gas station -------------------------------------------------------------
 
+## The nearest gas pump to you (or your motor).
 func _pump_position() -> Vector3:
-	var gas := world.get_place("gas_station")
+	var here := motor.global_position if player.state == Player.State.RIDING else player.global_position
+	var gas := world.nearest_place("gas_station", here)
 	return gas["door"] if not gas.is_empty() else Vector3(INF, 0, INF)
 
 
@@ -447,8 +455,9 @@ func _on_shop_sell() -> void:
 func _park_motor_at(place_id: String) -> void:
 	var place := world.get_place(place_id)
 	var door: Vector3 = place["door"]
-	var fz: float = place["front_z"]
-	motor.place(door + Vector3(2.5, 0.2, fz * 3.2), -PI * 0.5)
+	var front: Vector3 = place["front"]
+	var side := Vector3(-front.z, 0, front.x)
+	motor.place(door + front * 3.0 + side * 2.5 + Vector3(0, 0.2, 0), atan2(-side.x, -side.z))
 
 
 func _play(stream: AudioStream) -> void:
@@ -570,6 +579,49 @@ func _sync_motor_to_state() -> void:
 	GameState.motor_damage = motor.damage if motor.is_active else 0.0
 
 
+# --- Map streaming & city limits ----------------------------------------------
+
+func _current_pos() -> Vector3:
+	return motor.global_position if player.state == Player.State.RIDING else player.global_position
+
+
+func _stream_and_bounds(delta: float) -> void:
+	_stream_timer -= delta
+	if _stream_timer <= 0.0:
+		_stream_timer = 0.5
+		world.update_streaming(_current_pos())
+	_bounds_timer -= delta
+	if _bounds_timer > 0.0 or _returning or _ending_day:
+		return
+	_bounds_timer = BOUNDS_CHECK
+	var here := _current_pos()
+	if world.is_in_bounds(here):
+		_last_valid = here
+	else:
+		_back_inside()
+
+
+## Left the city (or rode into the sea): warn, fade, put you back facing the city.
+func _back_inside() -> void:
+	_returning = true
+	hud.show_toast("Lampas ka na sa Bacolod, boss!\n(You're leaving Bacolod. Turning you around.)", 3.5)
+	await hud.fade_out(0.4)
+	var center := world.get_map_rect().get_center()
+	var to_city := Vector3(center.x, 0, center.y) - _last_valid
+	var heading := atan2(-to_city.x, -to_city.z)
+	var spot := _last_valid + to_city.normalized() * 8.0 + Vector3(0, 0.3, 0)
+	if player.state == Player.State.RIDING:
+		motor.place(spot, heading)
+	else:
+		player.teleport(spot)
+		player.face_yaw(heading)
+	cam.snap_to(heading)
+	world.update_streaming(spot, true)
+	await get_tree().create_timer(0.3).timeout
+	await hud.fade_in(0.4)
+	_returning = false
+
+
 # --- Food, fainting ---------------------------------------------------------
 
 func _near_stall() -> bool:
@@ -603,12 +655,12 @@ func _on_fainted(reason: String) -> void:
 		player.set_riding(false)
 	await hud.fade_out(0.6)
 	await hud.show_caption("Nakuyapan ka!\n(You fainted)")
-	var clinic: Dictionary = world.get_place("clinic")
+	var clinic: Dictionary = world.nearest_place("clinic", player.global_position)
 	var door: Vector3 = clinic["door"]
 	player.teleport(door + Vector3(0, 0.2, 0))
 	cam.set_target(player, false)
 	if motor.is_active:
-		_park_motor_at("clinic")
+		_park_motor_at(str(clinic["id"]))
 	var fee := mini(Economy.CLINIC_FEE, maxi(GameState.money, 0))
 	GameState.add_money(-fee)
 	GameState.today["clinic"] = int(GameState.today["clinic"]) + fee
@@ -696,6 +748,8 @@ func _quit_to_menu() -> void:
 
 func respawn_at_home() -> void:
 	var spawn := world.get_spawn()
+	world.update_streaming(spawn["player_pos"], true)
+	_last_valid = spawn["player_pos"]
 	motor.set_ridden(false)
 	player.set_riding(false)
 	player.teleport(spawn["player_pos"])

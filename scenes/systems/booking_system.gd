@@ -45,7 +45,7 @@ var stage: Stage = Stage.OFFLINE
 var last_ride := false   # player pressed "Last Ride": next booking ends near home
 var _closed_shown := false
 
-var world: TestCity
+var world: GameWorld
 var player: Player
 var motor: Motorcycle
 var hud: HUD
@@ -82,7 +82,7 @@ func _ready() -> void:
 
 
 ## Called once by the game with references to everything we need.
-func setup(p_world: TestCity, p_player: Player, p_motor: Motorcycle, p_hud: HUD, p_cam: FollowCamera) -> void:
+func setup(p_world: GameWorld, p_player: Player, p_motor: Motorcycle, p_hud: HUD, p_cam: FollowCamera) -> void:
 	world = p_world
 	player = p_player
 	motor = p_motor
@@ -112,6 +112,8 @@ func _load_dialog() -> void:
 
 ## Current GPS target for the trip ({} when there's none).
 func get_target() -> Dictionary:
+	if _request.is_empty():
+		return {}   # trip was just cleared (finished / cancelled this frame)
 	match stage:
 		Stage.TO_PICKUP, Stage.BOARDING:
 			return {"pos": _request["pickup"]["pos"], "color": PICKUP_COLOR}
@@ -137,6 +139,8 @@ func _physics_process(delta: float) -> void:
 	phone.set_stats(int(t["fares"]) + int(t["tips"]), int(t["rides"]), GameState.rating)
 	_complain_cooldown = maxf(0.0, _complain_cooldown - delta)
 
+	if is_busy() and _request.is_empty():
+		stage = Stage.SEARCHING   # safety: a trip without data can't continue
 	match stage:
 		Stage.SEARCHING:
 			_next_request_in -= delta
@@ -280,13 +284,17 @@ func _make_request() -> void:
 		_next_request_in = 3.0   # try again soon
 		return
 	var trip_m := _city_dist(pickup["pos"], dropoff["pos"])
+	var person := _next_personality()
+	var kind: String = person.get("id", "")
+	var female := Passenger.is_female_for(kind, _rng)
 	var lang := Settings.passenger_language
 	if lang == "mixed":
 		lang = ["hil", "ceb", "tl", "en"][_rng.randi() % 4]
 	_request = {
-		"name": _names[_rng.randi() % _names.size()],
+		"name": Passenger.random_name(female, _rng),
+		"female": female,
 		"rating": _rng.randf_range(4.3, 5.0),
-		"personality": _next_personality(),
+		"personality": person,
 		"lang": lang,
 		"pickup": pickup,
 		"dropoff": dropoff,
@@ -349,7 +357,8 @@ func accept() -> void:
 	# Spawn the passenger waiting on the sidewalk.
 	_passenger = Passenger.new()
 	get_parent().add_child(_passenger)
-	_passenger.build(_rng, str(_request["name"]))
+	var person_kind: String = (_request["personality"] as Dictionary).get("id", "")
+	_passenger.build(_rng, str(_request["name"]), person_kind, bool(_request["female"]))
 	var pickup: Dictionary = _request["pickup"]
 	var pos: Vector3 = pickup["pos"]
 	var road_dir: Vector3 = pickup["road_dir"]
