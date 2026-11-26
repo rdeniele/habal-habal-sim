@@ -24,6 +24,7 @@ const FLOOR_H := 3.2
 
 var meta: Dictionary = {}
 var landmarks: Array[Dictionary] = []
+var street_labels: Array = []        # {"pos": Vector2, "angle", "name", "len", "major"} for the map
 
 var _chunk_size := 200.0
 var _available := {}                 # chunk key -> true
@@ -218,8 +219,10 @@ func _load_graph() -> void:
 	var ids: Array[int] = []
 	for n: Array in nodes:
 		ids.append(road_graph.add_point(Vector3(float(n[0]), 0, float(n[1]))))
+	var names: Array = g.get("names", [])
 	for e: Dictionary in g.get("edges", []):
 		var pts: Array = e["pts"]
+		_add_street_label(e, pts, names, classes)
 		var width := float(e["w"])
 		var major := MAJOR_CLASSES.has(str(classes[int(e["k"])]))
 		var prev := ids[int(e["a"])]
@@ -229,6 +232,30 @@ func _load_graph() -> void:
 			road_graph.add_road(prev, id, width, major)
 			prev = id
 		road_graph.add_road(prev, ids[int(e["b"])], width, major)
+
+
+## One label per named road piece (for the zoomed-in full map). Longest / biggest first.
+func _add_street_label(e: Dictionary, pts: Array, names: Array, classes: Array) -> void:
+	var n := int(e.get("n", 0))
+	if n <= 0 or n >= names.size() or pts.size() < 2:
+		return
+	var length := 0.0
+	for i in range(1, pts.size()):
+		length += Vector2(float(pts[i][0]), float(pts[i][1])).distance_to(Vector2(float(pts[i - 1][0]), float(pts[i - 1][1])))
+	if length < 40.0:
+		return
+	var mid := pts.size() / 2
+	var a: Array = pts[maxi(mid - 1, 0)]
+	var b: Array = pts[mini(mid, pts.size() - 1)] if pts.size() > 2 else pts[1]
+	var pa := Vector2(float(a[0]), float(a[1]))
+	var pb := Vector2(float(b[0]), float(b[1]))
+	var angle := (pb - pa).angle()
+	if angle > PI * 0.5:
+		angle -= PI           # keep the text upright
+	elif angle < -PI * 0.5:
+		angle += PI
+	street_labels.append({"pos": (pa + pb) * 0.5, "angle": angle, "name": str(names[n]), "len": length,
+		"major": MAJOR_CLASSES.has(str(classes[int(e["k"])]))})
 
 
 func _load_places() -> void:

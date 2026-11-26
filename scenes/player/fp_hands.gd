@@ -11,15 +11,24 @@ var _visible_time := 0.0
 var _bob := 0.0
 
 
-## Build the two arms in your skin and shirt colors.
+## Build the two arms (the same Blender forearm + fist as the body) in your skin and shirt colors.
 func build(skin: Color, sleeve: Color) -> void:
 	for side: float in [-1.0, 1.0]:
-		var pivot := Node3D.new()
+		var pivot := Node3D.new()   # at the wrist
 		add_child(pivot)
-		var forearm := LowPoly.box(pivot, Vector3(0.085, 0.085, 0.34), sleeve, Vector3(0, 0, 0.17))
-		var fist := LowPoly.box(pivot, Vector3(0.1, 0.095, 0.11), skin, Vector3(0, 0, -0.03))
-		var knuckles := LowPoly.box(pivot, Vector3(0.1, 0.03, 0.03), skin.darkened(0.15), Vector3(0, 0.03, -0.085))
-		for mi: MeshInstance3D in [forearm, fist, knuckles]:
+		var skin_mat := LowPoly.mat(skin)
+		var forearm := MeshInstance3D.new()
+		forearm.mesh = CharacterModel.kit_mesh("forearm")
+		forearm.material_override = LowPoly.mat(sleeve)
+		forearm.rotation.x = PI * 0.5       # the kit forearm hangs down from the elbow; here: elbow (back) -> wrist (front)
+		forearm.position = Vector3(0, 0, CharacterModel.FOREARM)
+		pivot.add_child(forearm)
+		var fist := MeshInstance3D.new()
+		fist.mesh = CharacterModel.kit_mesh("fist" if side > 0.0 else "fist_l")
+		fist.material_override = skin_mat
+		fist.rotation.x = PI * 0.5          # knuckles forward
+		pivot.add_child(fist)
+		for mi: MeshInstance3D in [forearm, fist]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		pivot.set_meta("side", side)
 		_arms.append(pivot)

@@ -94,6 +94,9 @@ Then every day:
     All made in code (no sound files). Volumes in **Settings** (Music / Sound effects).
 17. Passengers have several lines for every moment (getting on, chatting, thanks, complaints), so rides
     don't repeat. All in Hiligaynon, Bisaya, Tagalog and English.
+- **Sky**: drifting painted-style clouds (different weather every day, clear to cloudy), orange
+   sunsets, a moon and twinkling stars at night. Made in code (`scenes/world/sky.gdshader`); preview it
+   without the game: `python tools/sky_preview.py sky.png`.
 18. **Graphics → Low** is made for weak laptops: no shadows, and the 3D world is drawn at a lower
     resolution and sharpened back up (FSR). **High** adds soft corner shadows (SSAO). Night lights glow.
 19. **Controller**: plug in an Xbox-style gamepad. Menus work too: press any button to highlight one,
@@ -141,6 +144,8 @@ data/map/bacolod/      converted map: meta.json, graph.json (roads), chunks/*.js
 tools/                 osm_download.sh (get OSM data), osm_convert.py (make the game map),
                        make_icon.gd + make_ico.py (app icon from icon.svg)
 icon.svg / icon.ico    the app icon (original)
+assets/characters/     character_kit.glb (body parts the game uses) + character_kit.blend (open in Blender)
+tools/blender/         make_character_kit.py (builds the parts), preview_character.py / render_glb.py (previews)
 export_presets.cfg     Windows .exe export settings
 tests/                 automated tests (see below)
 ```
@@ -160,6 +165,40 @@ bash tools/osm_download.sh
 
 ```powershell
 python tools/osm_convert.py
+```
+
+## Characters (Blender)
+
+People are built from a kit of body parts modeled in **Blender** (original, early-2000s low-poly style):
+head with jaw, nose and ears; chest and shoulders; arms with real fists; legs with knees and calves;
+sneakers and tsinelas; 8 hairstyles; slim / average / heavy bodies. Faces (stubble, mustache, goatee,
+glasses, wrinkles) and clothes (jeans seams, polo buttons, jacket zipper, dress pleats) are pixel
+textures painted by the game in any skin, hair and clothing color.
+
+Animations are original and made in code (`scenes/common/character_model.gd`), in an early-2000s
+style: a weighty walk with hip sway and shoulder twist, a leaning run with the back foot kicking up,
+idle breathing / weight shifts / looking around, a bouncy fighting stance, punches that turn the whole
+body, blocking, flinching, sitting on the motor (riders lean into the handlebar), waving and cheering.
+
+To see the animations without opening the game, pose a row of characters and render them:
+
+```powershell
+godot --headless --path . -s res://tests/pose_export.gd
+```
+
+```powershell
+& "D:\Tools\Blenderlender-5.3.0-windows-x64lender.exe" -b -P tools/blender/render_glb.py -- "$env:APPDATA\Godotpp_userdata\Habal-Habal Simulator\pose_preview.glb" poses.png
+```
+
+To change the shapes: edit `tools/blender/make_character_kit.py` (or open `assets/characters/character_kit.blend`
+in Blender, but the script overwrites it), then rebuild the kit and render a preview, no window needed:
+
+```powershell
+& "D:\Tools\Blenderlender-5.3.0-windows-x64lender.exe" -b -P tools/blender/make_character_kit.py
+```
+
+```powershell
+& "D:\Tools\Blenderlender-5.3.0-windows-x64lender.exe" -b -P tools/blender/preview_character.py -- preview.png
 ```
 
 ## Automated tests

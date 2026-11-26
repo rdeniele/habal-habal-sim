@@ -13,3 +13,6 @@ Thumbs.db
 
 # Raw OpenStreetMap downloads (big; regenerate with tools/osm_download.sh)
 data/osm_raw/
+
+# Blender backup files
+*.blend1

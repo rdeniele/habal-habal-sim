@@ -24,6 +24,7 @@ var world: GameWorld
 var motor: Motorcycle
 var cam: FollowCamera
 var night_amount := 0.0   # 0 = day, 1 = night (other systems can read this)
+var _sky_day := -1        # which day's clouds the sky shows
 
 
 func setup(p_world: GameWorld, p_motor: Motorcycle, p_cam: FollowCamera) -> void:
@@ -46,9 +47,18 @@ func update_now() -> void:
 	var sun := world.sun
 	sun.light_energy = k[0]
 	sun.light_color = k[1]
-	world.sky_material.sky_top_color = k[2]
-	world.sky_material.sky_horizon_color = k[3]
-	world.sky_material.ground_horizon_color = k[3]
+	var sky := world.sky_material
+	sky.set_shader_parameter("sky_top", k[2])
+	sky.set_shader_parameter("sky_horizon", k[3])
+	sky.set_shader_parameter("sun_tint", k[1])
+	sky.set_shader_parameter("night", clampf((k[5] - 0.4) / 0.6, 0.0, 1.0))   # stars only once it's dark
+	if GameState.day != _sky_day:
+		# every day has its own weather: from clear blue to quite cloudy
+		_sky_day = GameState.day
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(_sky_day * 7919)
+		sky.set_shader_parameter("cloud_cover", rng.randf_range(0.15, 0.75))
+		sky.set_shader_parameter("cloud_offset", Vector2(rng.randf_range(0, 500), rng.randf_range(0, 500)))
 	world.environment.ambient_light_energy = k[4]
 	world.environment.fog_light_color = (k[3] as Color).lerp(Color("#cfe3ee"), 0.3)
 	night_amount = k[5]
@@ -96,6 +106,7 @@ func _apply_graphics() -> void:
 	world.sun.shadow_enabled = Settings.shadows_enabled()
 	world.sun.directional_shadow_max_distance = 160.0 if Settings.graphics == "high" else 100.0
 	world.environment.fog_density = 0.0045 if Settings.graphics == "low" else 0.0018
+	world.sky_material.set_shader_parameter("cloud_octaves", {"low": 3, "medium": 4, "high": 5}.get(Settings.graphics, 4))
 	var env := world.environment
 	# glow (bloom) settings; only bright things (lamps/windows/lights) glow
 	env.glow_hdr_threshold = 1.1

@@ -193,7 +193,8 @@ func _pose_player(delta: float) -> void:
 	else:
 		pm.pose_guard()
 	_flinch = maxf(0.0, _flinch - delta)
-	pm.rotation.x = _flinch * 0.8
+	if _flinch > 0.0:
+		pm.pose_flinch(_flinch / 0.3)
 
 
 ## What did that punch hit? A fighter, a person on the street, or a vehicle.

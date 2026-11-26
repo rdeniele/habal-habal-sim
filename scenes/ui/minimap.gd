@@ -6,7 +6,9 @@ extends Control
 ##   _overlay (child)  -> GPS route, places, landmarks, pin, target, you (redrawn every frame)
 ## Performance: the full map's ~15,000 roads and ~1,400 food stalls are packed once into a few
 ## big line lists and drawn in 3 calls (drawing them one by one made opening the map lag).
-## Full map: left click = drop a pin (GPS takes you there), right click = remove the pin.
+## Full map: mouse wheel (or + / -) zooms, drag to move around, Space centers on you,
+## click = drop a pin (GPS takes you there), right click = remove the pin.
+## Street names show up when you zoom in.
 
 signal clicked(world_pos: Vector3, button: int)
 
@@ -52,6 +54,14 @@ var target_color := Color.WHITE
 var has_pin := false
 var pin := Vector3.ZERO
 var enforcers := PackedVector3Array()   # traffic enforcers nearby (minimap only)
+var map_zoom := 1.0                     # full map: 1 = whole city fits, up to MAX_ZOOM
+var map_pan := Vector2.ZERO             # full map: how far (meters) the view moved from the city center
+const MAX_ZOOM := 16.0
+const LABEL_ZOOM := 3.0                 # street names appear from this zoom
+var _press_pos := Vector2.ZERO
+var _pressing := false
+var _dragging := false
+var _labels_sorted := false
 
 var _scale := 1.0
 var _origin := Vector2.ZERO
@@ -92,18 +102,92 @@ func redraw_roads() -> void:
 func _gui_input(event: InputEvent) -> void:
 	if not full or world == null:
 		return
-	if event is InputEventMouseButton and event.pressed:
+	_update_transform()
+	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT:
-			_update_transform()
-			clicked.emit(_to_world(mb.position), mb.button_index)
-			accept_event()
+		match mb.button_index:
+			MOUSE_BUTTON_WHEEL_UP:
+				if mb.pressed:
+					zoom_at(mb.position, 1.25)
+			MOUSE_BUTTON_WHEEL_DOWN:
+				if mb.pressed:
+					zoom_at(mb.position, 0.8)
+			MOUSE_BUTTON_LEFT:
+				if mb.pressed:
+					_pressing = true
+					_dragging = false
+					_press_pos = mb.position
+				else:
+					if _pressing and not _dragging:
+						clicked.emit(_to_world(mb.position), MOUSE_BUTTON_LEFT)   # a click, not a drag: pin
+					_pressing = false
+					_dragging = false
+			MOUSE_BUTTON_RIGHT:
+				if mb.pressed:
+					clicked.emit(_to_world(mb.position), MOUSE_BUTTON_RIGHT)
+		accept_event()
+	elif event is InputEventMouseMotion and _pressing:
+		var mm := event as InputEventMouseMotion
+		if not _dragging and mm.position.distance_to(_press_pos) > 6.0:
+			_dragging = true
+		if _dragging:
+			map_pan -= mm.relative / _scale
+			_clamp_pan()
+			_view_changed()
+		accept_event()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not full or not is_visible_in_tree() or world == null:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var k := (event as InputEventKey).physical_keycode
+		if k == KEY_EQUAL or k == KEY_KP_ADD:
+			zoom_at(size * 0.5, 1.5)
+		elif k == KEY_MINUS or k == KEY_KP_SUBTRACT:
+			zoom_at(size * 0.5, 1.0 / 1.5)
+		elif k == KEY_SPACE:
+			center_on(center, maxf(map_zoom, 5.0))
+		else:
+			return
+		get_viewport().set_input_as_handled()
+
+
+## Zoom by `factor`, keeping the spot under `screen_pos` where it is.
+func zoom_at(screen_pos: Vector2, factor: float) -> void:
+	_update_transform()
+	var before := _to_world(screen_pos)
+	map_zoom = clampf(map_zoom * factor, 1.0, MAX_ZOOM)
+	_update_transform()
+	var after := _to_world(screen_pos)
+	map_pan += Vector2(before.x - after.x, before.z - after.z)
+	_clamp_pan()
+	_view_changed()
+
+
+## Look at a spot (e.g. yourself) at a zoom level.
+func center_on(pos: Vector3, zoom: float) -> void:
+	var m := world.get_map_rect()
+	map_zoom = clampf(zoom, 1.0, MAX_ZOOM)
+	map_pan = Vector2(pos.x, pos.z) - m.get_center()
+	_clamp_pan()
+	_view_changed()
+
+
+func _clamp_pan() -> void:
+	var half := world.get_map_rect().size * 0.5
+	map_pan = map_pan.clamp(-half, half)
+
+
+func _view_changed() -> void:
+	queue_redraw()
+	_overlay.queue_redraw()
 
 
 func _update_transform() -> void:
 	if full and world != null:
 		var m := world.get_map_rect()
-		_scale = minf(size.x / m.size.x, size.y / m.size.y) * 0.96
+		_scale = minf(size.x / m.size.x, size.y / m.size.y) * 0.96 * map_zoom
 	else:
 		_scale = minf(size.x, size.y) / meters_across
 	_origin = size * 0.5
@@ -181,8 +265,7 @@ func _pack_full_map() -> void:
 func _draw_full_roads() -> void:
 	if not _packed:
 		_pack_full_map()
-	var m := world.get_map_rect()
-	var c := m.get_center()
+	var c := _view_center()
 	# draw in world meters, scaled to the screen by the canvas transform
 	draw_set_transform(_origin - c * _scale, 0.0, Vector2(_scale, _scale))
 	var px := 1.0 / _scale
@@ -245,6 +328,9 @@ func _draw_overlay() -> void:
 				o.draw_circle(ep, 4.5, Color(0, 0, 0, 0.6))
 				o.draw_circle(ep, 3.2, ENFORCER_COLOR)
 
+	if full and map_zoom >= LABEL_ZOOM:
+		_draw_street_names(rect)
+
 	# Landmarks (SM, Ayala, Cathedral...)
 	for lm: Dictionary in get_landmarks():
 		var lp := _to_screen(Vector3(float(lm["x"]), 0, float(lm["z"])))
@@ -262,7 +348,7 @@ func _draw_overlay() -> void:
 			continue
 		var icon: Array = ICONS[type]
 		var pos := _to_screen(place["door"])
-		if full and (type == "gas_station" or type == "clinic"):
+		if full and (type == "gas_station" or type == "clinic") and map_zoom < LABEL_ZOOM:
 			o.draw_circle(pos, 3.5, icon[1])   # many of these: small dots on the big map
 			continue
 		if not full:
@@ -302,8 +388,9 @@ func _draw_overlay() -> void:
 		var north := (Vector2(0, -1).rotated(view_yaw) * (minf(size.x, size.y) * 0.5 - 12.0)) + _origin
 		o.draw_string(_font, north + Vector2(-5, 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#ff6b6b"))
 	else:
-		o.draw_string(_font, Vector2(12, size.y - 12), "Left click: drop a pin (GPS)    Right click: remove pin    M: close",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.8))
+		o.draw_string(_font, Vector2(12, size.y - 12),
+			"Wheel / + -: zoom (%.0fx)   Drag: move   Space: find me   Click: pin   Right click: remove pin   M: close" % map_zoom,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.85))
 		var credit := world.get_map_credit()
 		if credit != "":
 			o.draw_string(_font, Vector2(size.x - 330, 20), credit, HORIZONTAL_ALIGNMENT_RIGHT, 320, 12, Color(1, 1, 1, 0.7))
@@ -312,8 +399,8 @@ func _draw_overlay() -> void:
 func _to_screen(p: Vector3) -> Vector2:
 	var c := center
 	if full:
-		var m := world.get_map_rect()
-		c = Vector3(m.get_center().x, 0, m.get_center().y)
+		var vc := _view_center()
+		c = Vector3(vc.x, 0, vc.y)
 	var rel := Vector2(p.x - c.x, p.z - c.z)
 	if not full:
 		rel = rel.rotated(view_yaw)
@@ -322,10 +409,14 @@ func _to_screen(p: Vector3) -> Vector2:
 
 ## Screen point on the full map -> world position.
 func _to_world(sp: Vector2) -> Vector3:
-	var m := world.get_map_rect()
-	var c := m.get_center()
+	var c := _view_center()
 	var rel := (sp - _origin) / _scale
 	return Vector3(c.x + rel.x, 0, c.y + rel.y)
+
+
+## Full map: the world point in the middle of the view.
+func _view_center() -> Vector2:
+	return world.get_map_rect().get_center() + map_pan
 
 
 func _clamp_to_edge(p: Vector2, margin: float) -> Vector2:
@@ -341,6 +432,57 @@ func _draw_icon(pos: Vector2, letter: String, color: Color, radius: float) -> vo
 	o.draw_circle(pos, radius, color)
 	var fs := int(radius * 1.5)
 	o.draw_string(_font, pos + Vector2(-radius, fs * 0.36), letter, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, fs, Color("#1d2733"))
+
+
+## Street names along the roads (zoomed-in full map). Big and long roads first; names that
+## would overlap one already drawn are skipped.
+func _draw_street_names(rect: Rect2) -> void:
+	var labels: Variant = world.get("street_labels")
+	if not (labels is Array):
+		return
+	var list: Array = labels
+	if not _labels_sorted:
+		list.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			if a["major"] != b["major"]:
+				return a["major"]
+			return float(a["len"]) > float(b["len"]))
+		_labels_sorted = true
+	var o := _overlay
+	var used: Array[Rect2] = []
+	var drawn := 0
+	var fs := 11 if map_zoom < 6.0 else 13
+	var seen_names := {}
+	for lab: Dictionary in list:
+		var sp := _to_screen(Vector3(lab["pos"].x, 0, lab["pos"].y))
+		if not rect.grow(-20).has_point(sp):
+			continue
+		var text: String = lab["name"]
+		var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if float(lab["len"]) * _scale < w * 0.8:
+			continue   # the road is too short on screen for its name
+		# one label per street per screen area
+		var cell := Vector2i(int(sp.x / 220.0), int(sp.y / 220.0))
+		var key := "%s_%d_%d" % [text, cell.x, cell.y]
+		if seen_names.has(key):
+			continue
+		var box := Rect2(sp - Vector2(w * 0.5 + 4, fs), Vector2(w + 8, fs * 1.6))
+		var overlaps := false
+		for r in used:
+			if r.intersects(box):
+				overlaps = true
+				break
+		if overlaps:
+			continue
+		used.append(box)
+		seen_names[key] = true
+		o.draw_set_transform(sp, float(lab["angle"]), Vector2.ONE)
+		o.draw_string_outline(_font, Vector2(-w * 0.5, fs * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 4, Color(0, 0, 0, 0.75))
+		o.draw_string(_font, Vector2(-w * 0.5, fs * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+			Color(1, 1, 1, 0.95) if lab["major"] else Color(0.85, 0.88, 0.92, 0.9))
+		drawn += 1
+		if drawn >= 70:
+			break
+	o.draw_set_transform(Vector2.ZERO)
 
 
 ## A small name tag (full map).

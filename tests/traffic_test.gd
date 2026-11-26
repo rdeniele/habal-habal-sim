@@ -424,6 +424,27 @@ func _run() -> void:
 	var map_ms := (Time.get_ticks_usec() - t0) / 1000.0
 	print("  full map packing: %.1f ms (%d road lines)" % [map_ms, (game.hud.full_map._minor.size() + game.hud.full_map._major.size()) / 2])
 	_check(game.hud.is_menu_open(), "full map frees the mouse (for pins)")
+	await _wait(0.1)
+	var fm: Minimap = game.hud.full_map
+	var labels: Array = game.world.get("street_labels")
+	print("  street name labels: %d" % labels.size())
+	_check(labels.size() > 100, "street names loaded for the map")
+	var spot := Vector3(-520.3, 0, 32.4)   # SM City
+	fm.center_on(spot, 8.0)
+	var mid := fm._to_world(fm.size * 0.5)
+	_check(is_equal_approx(fm.map_zoom, 8.0) and Vector2(mid.x - spot.x, mid.z - spot.z).length() < 1.0, "map zooms in and centers on a spot")
+	var mpp := fm.meters_per_pixel()
+	fm.zoom_at(fm.size * 0.25, 1.25)
+	_check(fm.meters_per_pixel() < mpp, "mouse wheel zooms in (more detail)")
+	var under := fm._to_world(fm.size * 0.25)
+	fm.zoom_at(fm.size * 0.25, 1.25)
+	var under2 := fm._to_world(fm.size * 0.25)
+	_check(Vector2(under.x - under2.x, under.z - under2.z).length() < 0.5, "zoom keeps the spot under the mouse")
+	game._on_map_clicked(fm._to_world(fm.size * 0.5), MOUSE_BUTTON_LEFT)
+	_check(not game._pin.is_empty(), "pin dropped on the zoomed-in map")
+	game._on_map_clicked(Vector3.ZERO, MOUSE_BUTTON_RIGHT)
+	fm.map_zoom = 1.0
+	fm.map_pan = Vector2.ZERO
 	game.hud.toggle_full_map()
 
 	# --- First person fists -----------------------------------------------------------------------

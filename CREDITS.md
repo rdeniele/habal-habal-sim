@@ -6,7 +6,9 @@ Every third-party asset used in the game must be listed here with its license.
 - [Godot Engine](https://godotengine.org) – MIT License
 
 ## Made in code (original, no third-party assets)
-- All 3D models are built in code from boxes/cylinders (original), including the stylized
+- Characters: original body-part kit modeled with a Blender script (`tools/blender/make_character_kit.py`,
+  Blender is GPL; the models it makes are ours), faces and clothes painted in code.
+- Other 3D models are built in code from boxes/cylinders (original), including the stylized
   San Sebastian Cathedral, Public Plaza bandstand and Provincial Capitol.
 - Pixel textures (facades, roofs, asphalt, sidewalk, grass, water) are generated in code (original).
 - All sounds and music are synthesized in code (`scenes/common/sfx.gd`, original): scooter engine,

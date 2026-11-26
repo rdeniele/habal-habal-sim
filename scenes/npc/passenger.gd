@@ -85,8 +85,7 @@ func _physics_process(delta: float) -> void:
 	match state:
 		State.WAITING:
 			# Wave at the rider
-			model.pose_stand()
-			model.arm_r.rotation = Vector3(0, 0, 2.6 + sin(_t * 7.0) * 0.35)
+			model.pose_wave()
 		State.WALKING_TO_MOTOR, State.LEAVING:
 			_walk_step(delta)
 

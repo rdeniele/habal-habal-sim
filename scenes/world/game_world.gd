@@ -16,7 +16,7 @@ var road_graph := RoadGraph.new()
 ## Lighting handles (the DayCycle changes these over the day).
 var sun: DirectionalLight3D
 var environment: Environment
-var sky_material: ProceduralSkyMaterial
+var sky_material: ShaderMaterial   # scenes/world/sky.gdshader (clouds, sun, moon, stars)
 
 ## Materials that glow at night. Each has meta "max_energy".
 var glow_materials: Array[BaseMaterial3D] = []
@@ -118,13 +118,16 @@ func set_night_glow(amount: float) -> void:
 
 ## Sky, fog, ambient light and the sun. Call once in _ready.
 func build_environment(fog_density: float = 0.0018) -> void:
-	sky_material = ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color("#4f9fe0")
-	sky_material.sky_horizon_color = Color("#cfe8f5")
-	sky_material.ground_horizon_color = Color("#cfe8f5")
-	sky_material.ground_bottom_color = Color("#6b8f71")
+	sky_material = ShaderMaterial.new()
+	sky_material.shader = load("res://scenes/world/sky.gdshader")
+	sky_material.set_shader_parameter("sky_top", Color("#4f9fe0"))
+	sky_material.set_shader_parameter("sky_horizon", Color("#cfe8f5"))
+	sky_material.set_shader_parameter("ground_color", Color("#6b8f71"))
 	var sky := Sky.new()
 	sky.sky_material = sky_material
+	# the clouds move, so the sky's lighting is refreshed a bit every frame (small = cheap)
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	sky.radiance_size = Sky.RADIANCE_SIZE_64
 
 	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
