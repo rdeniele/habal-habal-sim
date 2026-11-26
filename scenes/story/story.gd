@@ -4,6 +4,8 @@ extends Node
 ##   1. Intro at home with Nanay (choose: full tutorial or skip to the license)
 ##   2. Driving school: 4 lessons (accelerate, brake, turn, park) in the cone yard
 ##   3. Passenger training: Sir Jojo rides on the back, keep his comfort above 60%
+##      (2 and 3 happen at the school's private TRAINING GROUND outside the city:
+##       no traffic, no people walking through. A shuttle brings you back for the license.)
 ##   4. License at the Transport Office desk (enter your name, pay the fee, get your card)
 ##   5. Motor Shop: buy or rent your first motor
 ##   6. Day 1 begins at home
@@ -47,6 +49,7 @@ var _has_target := false
 var _nanay: Passenger
 var _jojo: Passenger
 var _yard_c := Vector3.ZERO
+var _ground: TrainingGround
 var _yard_guard := false
 var _training := false
 var _crashed := false
@@ -117,9 +120,11 @@ func _intro() -> bool:
 
 func _driving_school() -> void:
 	var d := hud.dialog_box
-	var door: Vector3 = world.get_place("driving_school")["door"]
-	_yard_c = world.get_school_yard_center()
-	await _travel("Nag-jeep ka pakadto sa Driving School...\n(You took a jeepney to the Driving School)", door, PI)
+	_ground = TrainingGround.new()
+	game.add_child(_ground)
+	_yard_c = _ground.yard_center()
+	var door := _ground.office_door()
+	await _travel("Nag-jeep ka pakadto sa training ground sang Driving School...\n(You took a jeepney to the Driving School's training ground)", _ground.arrival_point(), 0.0)
 
 	# Instructor waiting in the yard + the yellow school motor
 	_jojo = Passenger.new()
@@ -136,7 +141,7 @@ func _driving_school() -> void:
 	motor.set_active(true)
 	motor.place(_track_point(90.0) + Vector3(0, 0.2, 0), PI * 0.5)
 
-	hud.set_objective("Driving school", "Talk to Sir Jojo, your instructor (behind the school building).")
+	hud.set_objective("Driving school", "Talk to Sir Jojo, your instructor (in the cone yard).")
 	_set_target(_jojo.global_position, "Sir Jojo", GREEN)
 	await _wait_interact(_jojo.global_position, "Istorya kay Sir Jojo  (Talk)")
 	_clear_target()
@@ -194,8 +199,7 @@ func _passenger_training() -> void:
 	# Sir Jojo gets off and goes back inside.
 	motor.detach_passenger()
 	var off := motor.global_position + motor.global_transform.basis * Vector3(1.0, 0, 0.6)
-	var door: Vector3 = world.get_place("driving_school")["door"]
-	_jojo.get_off_and_leave(game, off, door)
+	_jojo.get_off_and_leave(game, off, _ground.office_door())
 	_jojo = null
 	await d.say(INSTRUCTOR, "Kadto na sa Transport Office desk para sa lisensya mo.\n(Now go to the Transport Office desk for your license.)")
 
@@ -233,6 +237,12 @@ func _training_run() -> String:
 func _license() -> void:
 	var d := hud.dialog_box
 	var door: Vector3 = world.get_place("driving_school")["door"]
+	if _ground != null:
+		# back to the city: the school shuttle drops you at the office (the school motor stays)
+		await _travel("Ginhatod ka sang school shuttle balik sa siyudad...\n(The school shuttle took you back to the city office)", door, PI)
+		motor.set_active(false)
+		_ground.queue_free()
+		_ground = null
 	hud.set_objective("License", "Go to the Transport Office desk at the front of the school (E).")
 	_set_target(door, "TRANSPORT OFFICE", GREEN)
 	await _wait_interact(door, "Transport Office desk")
@@ -303,9 +313,13 @@ func _reset_training() -> void:
 	await hud.fade_in(0.4)
 
 
-## A loop on real roads around the school (from the road graph), then back into the yard.
-## Picks road points 90-200 m away in 4 directions, ordered around the yard.
+## Once around the training ground's practice loop, then back to the yard.
+## (Without the training ground: a loop on the real roads around the school.)
 func _training_route() -> Array[Vector3]:
+	if _ground != null:
+		var loop := _ground.route_points()
+		loop.append(_track_point(90.0))
+		return loop
 	var by_quadrant := {}
 	for p in world.road_graph.points_near(_yard_c, 200.0):
 		var d := _flat(p, _yard_c)

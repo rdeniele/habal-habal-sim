@@ -77,9 +77,11 @@ func _physics_process(delta: float) -> void:
 	if not _placed:
 		_pos = want
 		_placed = true
+	elif Vector2(global_position.x - _pos.x, global_position.z - _pos.z).length() > 1.0:
+		_pos = Vector3(global_position.x, 0, global_position.z)   # something moved us: walk back from here
 	var gap := Vector2(want.x - _pos.x, want.z - _pos.z)
 	var walk_dir: Vector3
-	if gap.length() > 0.6:
+	if gap.length() > 0.05:
 		# not on our sidewalk spot (turned a corner / crossing the street): walk there first
 		walk_dir = Vector3(gap.x, 0, gap.y).normalized()
 		_pos += walk_dir * minf(WALK_SPEED * 1.15 * delta, gap.length())
@@ -98,7 +100,12 @@ func _physics_process(delta: float) -> void:
 				side = -side   # cross the street at the corner (walks across, cars stop for them)
 		want = _sidewalk_spot()
 		walk_dir = (graph.get_point(to_id) - graph.get_point(from_id)) / seg_len
-		_pos = want
+		var step := Vector3(want.x - _pos.x, 0, want.z - _pos.z)
+		if step.length() <= 0.05:
+			_pos = want
+		else:
+			# just turned a corner / decided to cross: walk over (next frames continue the walk)
+			_pos += step.normalized() * WALK_SPEED * 1.15 * delta
 	global_transform = Transform3D(Basis(Vector3.UP, atan2(-walk_dir.x, -walk_dir.z)), Vector3(_pos.x, 0, _pos.z))
 	_phase += delta * WALK_SPEED * 2.6
 	model.walk(_phase, 0.5)

@@ -16,6 +16,7 @@ var _t := 0.0
 var _cooldown := 0.0
 var _shots := {}
 var _tried_expensive := false
+var _checked_ground := false
 var _fails: Array[String] = []
 var _done := false
 
@@ -106,6 +107,17 @@ func _physics_process(delta: float) -> void:
 			game._toggle_ride()
 			return
 		if story._training:
+			if not _checked_ground:
+				_checked_ground = true
+				_check(TrainingGround.contains(motor.global_position), "training happens at the private training ground")
+				var near := 0
+				for v in game.traffic.vehicles:
+					if is_instance_valid(v) and v.global_position.distance_to(motor.global_position) < 300.0:
+						near += 1
+				for p in game.pedestrians.people:
+					if is_instance_valid(p) and p.global_position.distance_to(motor.global_position) < 300.0:
+						near += 1
+				_check(near == 0, "no traffic or people at the training ground")
 			_shot_once("story_04_training")
 		elif objective.contains("lesson"):
 			_shot_once("story_03_lesson")

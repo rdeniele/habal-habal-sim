@@ -652,6 +652,8 @@ func _stream_and_bounds(delta: float) -> void:
 		return
 	_bounds_timer = BOUNDS_CHECK
 	var here := _current_pos()
+	if TrainingGround.contains(here):
+		return   # the driving school's training ground is outside the city on purpose
 	if world.is_in_bounds(here):
 		_last_valid = here
 	else:

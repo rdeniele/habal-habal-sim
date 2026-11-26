@@ -37,6 +37,8 @@ godot --path .
 
 A new game starts with the story: talk with Nanay, go to driving school (4 lessons + passenger
 training with Sir Jojo), get your license, then buy or rent your first motor at the Motor Shop.
+The lessons happen at the school's private **training ground** outside the city (a fenced lot with a
+cone yard and a practice loop), so no traffic or people get in the way. A shuttle brings you back.
 Already know how to ride? Pick "Kabalo na ko!" at the start to skip straight to the license.
 
 Then every day:
@@ -149,7 +151,8 @@ The city is real: roads, buildings, parks, rivers and the coastline come from Op
 (© OpenStreetMap contributors, ODbL). The world origin (0, 0) is the Public Plaza.
 Landmarks: San Sebastian Cathedral, Public Plaza, Provincial Capitol, SM City, Ayala Capitol Central.
 Where OSM has no buildings mapped, the converter adds simple "filler" houses and stores so streets
-aren't empty. To rebuild the map (e.g. after OSM updates), in Git Bash:
+aren't empty. Buildings that a road runs through (like covered walkways over a street) are removed,
+and buildings whose corners poke into a lane are trimmed back to the curb. To rebuild the map (e.g. after OSM updates), in Git Bash:
 
 ```powershell
 bash tools/osm_download.sh

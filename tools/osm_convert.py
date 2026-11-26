@@ -514,6 +514,100 @@ def count_near(bgrid, p, r):
     return n
 
 
+# --- Buildings on roads ---------------------------------------------------------
+# OpenStreetMap buildings and roads are drawn by different people, and our road widths are
+# estimates, so some buildings poke into the street (or even sit across it, like covered
+# walkways/bridgeways over a road). In the game that looks like a building blocking the lane.
+# Fix: buildings that a road runs THROUGH are removed; buildings that only poke into the lane
+# get those corners pushed back to the curb.
+
+SKIP_CLASSES = {"footway", "path", "pedestrian", "steps", "track", "service", "cycleway"}
+CURB_GAP = 0.4    # keep corners at least this far outside the road edge
+
+
+def _point_in_poly(p, poly):
+    x, z = p
+    inside = False
+    for i in range(len(poly)):
+        x1, z1 = poly[i]
+        x2, z2 = poly[(i + 1) % len(poly)]
+        if (z1 > z) != (z2 > z) and x < (x2 - x1) * (z - z1) / (z2 - z1) + x1:
+            inside = not inside
+    return inside
+
+
+def fix_buildings_on_roads(buildings, road_index):
+    kept, removed, pushed = [], 0, 0
+    cell = road_index.cell
+    for b in buildings:
+        poly = [list(q) for q in b["p"]]
+        xs = [q[0] for q in poly]
+        zs = [q[1] for q in poly]
+        segs = set()
+        for gx in range(int(math.floor(min(xs) / cell)) - 1, int(math.floor(max(xs) / cell)) + 2):
+            for gz in range(int(math.floor(min(zs) / cell)) - 1, int(math.floor(max(zs) / cell)) + 2):
+                for ei, si in road_index.grid.get((gx, gz), []):
+                    if ROAD_CLASSES[road_index.edges[ei]["k"]] not in SKIP_CLASSES:
+                        segs.add((ei, si))
+        if not segs:
+            kept.append(b)
+            continue
+        # 1) a road runs through the footprint -> remove the building
+        through = False
+        for ei, si in segs:
+            a = road_index.edges[ei]["pts"][si]
+            c = road_index.edges[ei]["pts"][si + 1]
+            n = max(2, int(dist(a, c)))
+            for k in range(n + 1):
+                t = k / n
+                if _point_in_poly((a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t), poly):
+                    through = True
+                    break
+            if through:
+                break
+        if through:
+            removed += 1
+            continue
+        # 2) corners inside the road corridor -> push them back to the curb
+        moved = False
+        too_deep = False
+        for _ in range(3):
+            changed = False
+            for vi, v in enumerate(poly):
+                for ei, si in segs:
+                    e = road_index.edges[ei]
+                    q, _t = closest_on_segment(v, e["pts"][si], e["pts"][si + 1])
+                    d = dist(v, q)
+                    limit = e["w"] * 0.5 + CURB_GAP
+                    if d >= limit:
+                        continue
+                    if limit - d > 4.0 or d < 0.05:
+                        too_deep = True
+                        break
+                    k = limit / d
+                    poly[vi] = [q[0] + (v[0] - q[0]) * k, q[1] + (v[1] - q[1]) * k]
+                    v = poly[vi]
+                    changed = moved = True
+                if too_deep:
+                    break
+            if too_deep or not changed:
+                break
+        if too_deep:
+            removed += 1
+            continue
+        if moved:
+            area = poly_area(poly)
+            orig = poly_area(b["p"])
+            if area * orig <= 0 or abs(area) < 0.4 * abs(orig):
+                removed += 1   # pushing made it too thin / twisted: drop it
+                continue
+            b = dict(b)
+            b["p"] = [[r1(x), r1(z)] for x, z in poly]
+            pushed += 1
+        kept.append(b)
+    return kept, removed, pushed
+
+
 # --- Filler buildings ----------------------------------------------------------
 # OpenStreetMap doesn't have every building in Bacolod mapped, which leaves streets
 # looking empty. Where a street has no mapped buildings, we add simple houses/stores
@@ -826,6 +920,8 @@ def main():
     fillers = make_fillers(edges, occ, exclusions, sea, 3500.0, road_index)
     print("  %d filler buildings added on empty streets" % len(fillers))
     buildings = buildings + fillers
+    buildings, gone, pushed = fix_buildings_on_roads(buildings, road_index)
+    print("  buildings on roads: %d removed (road runs through them), %d trimmed back to the curb" % (gone, pushed))
 
     # --- Chunks ---
     print("Writing chunks...")
