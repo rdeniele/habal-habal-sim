@@ -64,7 +64,7 @@ Then every day:
    Let a meter hit zero and you faint and wake up at the clinic (₱500).
 10. **Traffic is real**: cars, jeepneys, tricycles and motorbikes drive on the right, stop at red lights
     and honk if you block them. People walk the sidewalks and cross the streets: don't hit them!
-    Every traffic light stands on the **far corner** of the crossing, facing you, with a **countdown timer**
+    Traffic lights only stand at the big main-road crossings (at least 350 m apart). Each one stands on the **far corner** of the crossing, facing you, with a **countdown timer**
     only your lane can see; the speedometer shows "LIGHT AHEAD: RED 12s". **Right turn anytime** is allowed.
     Some drivers are careless: cars can **crash** into each other (or into you), and the drivers may
     get out and fight each other. People on the street sometimes start fights too.

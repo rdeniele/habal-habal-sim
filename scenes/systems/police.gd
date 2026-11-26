@@ -87,12 +87,12 @@ func _physics_process(delta: float) -> void:
 	_update_chase(delta)
 
 
-## Enforcers stand at every third traffic-light intersection near you.
+## Enforcers stand at every second traffic-light crossing near you.
 func _update_enforcers(center: Vector3) -> void:
 	var g := world.road_graph
 	var near := {}
 	for id in g.point_ids_near(center, ENFORCER_RADIUS):
-		if id % 3 == 0 and traffic.is_signal(id):
+		if id % 2 == 0 and traffic.is_signal(id):
 			near[id] = true
 			if not enforcers.has(id):
 				enforcers[id] = _spawn_enforcer(id)

@@ -56,6 +56,20 @@ func _run() -> void:
 		_shot("traffic_01_street")
 
 	# --- Traffic light states -----------------------------------------------------
+	# lights are spread out now: go to the nearest one so its posts get built
+	if traffic._light_nodes.is_empty() and not traffic._signals.is_empty():
+		var nearest_id := -1
+		var nearest_d := INF
+		for sid: int in traffic._signals:
+			var dd: float = game.world.road_graph.get_point(sid).distance_to(player.global_position)
+			if dd < nearest_d:
+				nearest_d = dd
+				nearest_id = sid
+		var lp0: Vector3 = game.world.road_graph.get_point(nearest_id)
+		game.world.update_streaming(lp0, true)
+		player.teleport(lp0 + Vector3(12, 0.3, 12))
+		traffic._update_lights(player.global_position)
+		await _wait(0.5)
 	var found_light := false
 	for id: int in traffic._light_nodes:
 		var nb: PackedInt64Array = game.world.road_graph.neighbors(id)
@@ -282,6 +296,28 @@ func _run() -> void:
 	if walker != null:
 		game._on_hit_person(walker, 6.0)
 		_check(walker.knocked > 0.0, "a person you hit with the motor falls down")
+
+	# --- Fewer, spaced-out traffic lights with a ~1 minute cycle ---------------------------
+	var ids: Array = traffic._signals.keys()
+	var closest := INF
+	var g: RoadGraph = game.world.road_graph
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			closest = minf(closest, g.get_point(ids[i]).distance_to(g.get_point(ids[j])))
+	print("  traffic lights in the city: %d, closest two: %.0f m apart" % [ids.size(), closest])
+	_check(ids.size() > 10 and closest >= Traffic.LIGHT_SPACING, "traffic lights are spaced out (350 m+)")
+	if not ids.is_empty():
+		var sid: int = ids[0]
+		var from_a: int = g.neighbors(sid)[0]
+		var red_time := 0.0
+		var saved := traffic._clock
+		for step in 240:   # sample the whole 120 s cycle every 0.5 s
+			traffic._clock = saved + step * 0.5
+			if traffic.light_state(sid, from_a) == 2:
+				red_time += 0.5
+		traffic._clock = saved
+		print("  one direction is red %.0f s out of every %.0f s" % [red_time, Traffic.CYCLE])
+		_check(red_time >= 55.0 and red_time <= 65.0, "red light lasts about 1 minute")
 
 	# --- Traffic light countdown timers ---------------------------------------------------
 	var lid := -1

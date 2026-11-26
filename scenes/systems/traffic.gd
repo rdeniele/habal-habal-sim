@@ -3,8 +3,10 @@ extends Node3D
 ## Keeps AI vehicles and pedestrians around the player, and runs traffic lights.
 ## - Vehicles spawn 90-260 m away on random roads and are removed past 320 m.
 ## - How many depends on the graphics setting, rush hour (more) and late night (fewer).
-## - Traffic lights sit at intersections of major roads (3+ roads meeting). The two crossing
-##   directions take turns: 12 s green, 3 s yellow, then red while the other side goes.
+## - Traffic lights only at real crossings of main roads (a main road meeting another main road),
+##   and never closer than LIGHT_SPACING to each other (the busiest crossings win).
+##   The two crossing directions take turns: 55 s green, 4 s yellow, 1 s all-red, so a red
+##   light means about a 1-minute wait (right turn on red is still allowed).
 
 signal vehicle_cut_off(vehicle: TrafficVehicle)
 signal vehicles_crashed(a: TrafficVehicle, b: TrafficVehicle)
@@ -14,7 +16,11 @@ const SPAWN_MIN := 90.0
 const SPAWN_MAX := 260.0
 const DESPAWN := 320.0
 const LIGHT_RADIUS := 220.0
-const CYCLE := 32.0
+const LIGHT_SPACING := 350.0   # meters between traffic lights (at least)
+const GREEN := 55.0            # seconds of green per direction
+const YELLOW := 4.0
+const ALL_RED := 1.0           # both directions red for a moment
+const CYCLE := (GREEN + YELLOW + ALL_RED) * 2.0   # 120 s
 
 var world: GameWorld
 var player: Player
@@ -28,7 +34,7 @@ var _clock := 0.0
 var _tick := 0.0
 var _crash_tick := 0.0
 var _crash_sfx: AudioStreamPlayer3D
-var _signal_cache := {}      # point id -> bool (is a traffic light)
+var _signals := {}           # point id -> true for every traffic light (picked once at the start)
 var _light_nodes := {}       # point id -> {"node": Node3D, "heads": Array}
 var _mat_off: StandardMaterial3D
 var _mats_on: Array[StandardMaterial3D] = []
@@ -48,6 +54,51 @@ func setup(p_world: GameWorld, p_player: Player, p_motor: Motorcycle) -> void:
 	add_child(_crash_sfx)
 	for c: String in ["#ff3b30", "#ffcc00", "#34c759"]:
 		_mats_on.append(LowPoly.glow(Color(c), 3.0))
+	_pick_signals()
+
+
+## Choose the traffic light crossings for the whole city (once).
+## A crossing qualifies if main roads come in from at least 3 directions (a main road crossing
+## or T-ing into another main road; a side street joining a main road doesn't count).
+## Then the busiest ones are kept, skipping any closer than LIGHT_SPACING to one already kept.
+func _pick_signals() -> void:
+	var g := world.road_graph
+	var major_ends := {}   # point id -> how many main-road pieces meet there
+	for seg: Dictionary in g.segments:
+		if seg.get("major", false):
+			for k: String in ["a", "b"]:
+				var id := int(seg[k])
+				major_ends[id] = int(major_ends.get(id, 0)) + 1
+	var candidates: Array = []
+	for id: int in major_ends:
+		if int(major_ends[id]) >= 3 and g.degree(id) >= 3:
+			var widest := 0.0
+			for n in g.neighbors(id):
+				widest = maxf(widest, g.road_width(id, n))
+			candidates.append([int(major_ends[id]) * 100.0 + g.degree(id) * 10.0 + widest, id])
+	candidates.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
+	var grid := {}   # Vector2i cell -> Array of kept positions
+	for c: Array in candidates:
+		var id: int = c[1]
+		var p := g.get_point(id)
+		var cell := Vector2i(floori(p.x / LIGHT_SPACING), floori(p.z / LIGHT_SPACING))
+		var too_close := false
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				for q: Vector3 in grid.get(cell + Vector2i(dx, dz), []):
+					if q.distance_to(p) < LIGHT_SPACING:
+						too_close = true
+						break
+				if too_close:
+					break
+			if too_close:
+				break
+		if too_close:
+			continue
+		_signals[id] = true
+		if not grid.has(cell):
+			grid[cell] = []
+		(grid[cell] as Array).append(p)
 
 
 ## Target number of vehicles right now.
@@ -198,10 +249,12 @@ func player_in_front_of(v: TrafficVehicle, dist: float) -> bool:
 # --- Traffic lights -----------------------------------------------------------------
 
 func is_signal(id: int) -> bool:
-	if not _signal_cache.has(id):
-		var g := world.road_graph
-		_signal_cache[id] = g.degree(id) >= 3 and g.is_major_point(id)
-	return _signal_cache[id]
+	return _signals.has(id)
+
+
+## How many traffic lights the city has (for tests / debugging).
+func signal_count() -> int:
+	return _signals.size()
 
 
 ## Which of the two directions an approach (coming from `from_id`) belongs to.
@@ -214,27 +267,40 @@ func _group(id: int, from_id: int) -> int:
 	return 0 if c > 0.707 else 1
 
 
+## Where this crossing is in its cycle (crossings don't all switch at the same moment).
+func _cycle_time(id: int) -> float:
+	return fmod(_clock + float(id % 97) / 97.0 * CYCLE, CYCLE)
+
+
+## When each direction's light changes within the 120 s cycle:
+##   direction 0: green 0-55, yellow 55-59, red 59-120
+##   direction 1: red 0-60, green 60-115, yellow 115-119, red 119-120
+func _changes(group: int) -> Array:
+	var half := GREEN + YELLOW + ALL_RED
+	if group == 0:
+		return [[GREEN, 0], [GREEN + YELLOW, 1], [CYCLE, 2]]
+	return [[half, 2], [half + GREEN, 0], [half + GREEN + YELLOW, 1], [CYCLE, 2]]
+
+
 ## 0 = green, 1 = yellow, 2 = red, for traffic coming into `id` from `from_id`.
 func light_state(id: int, from_id: int) -> int:
-	var t := fmod(_clock + float(id % 97) * 0.37, CYCLE)
-	if _group(id, from_id) == 0:
-		if t < 12.0:
-			return 0
-		return 1 if t < 15.0 else 2
-	if t < 16.0:
-		return 2
-	if t < 28.0:
-		return 0
-	return 1 if t < 31.0 else 2
+	var t := _cycle_time(id)
+	for c: Array in _changes(_group(id, from_id)):
+		if t < float(c[0]):
+			return int(c[1])
+	return 2
 
 
-## Seconds until this approach's light changes (for the countdown timers).
+## Seconds until this approach's light changes color (for the countdown timers).
 func light_time_left(id: int, from_id: int) -> float:
-	var t := fmod(_clock + float(id % 97) * 0.37, CYCLE)
-	var changes := [12.0, 15.0, CYCLE] if _group(id, from_id) == 0 else [16.0, 28.0, 31.0, CYCLE]
-	for c: float in changes:
-		if t < c:
-			return c - t
+	var t := _cycle_time(id)
+	var list := _changes(_group(id, from_id))
+	for i in list.size():
+		if t < float(list[i][0]):
+			# red at the end of the cycle continues into the next cycle's red (group 1)
+			if i == list.size() - 1 and int(list[i][1]) == int(list[0][1]):
+				return float(list[i][0]) - t + float(list[0][0])
+			return float(list[i][0]) - t
 	return 0.0
 
 
