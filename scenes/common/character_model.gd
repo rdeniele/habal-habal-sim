@@ -36,9 +36,14 @@ var forearm_r: Node3D
 var _helmet: Node3D
 var _hair: Node3D
 var _look: Dictionary = {}
+## Performance: hide this person beyond this distance (0 = always drawn). Set before building.
+var lod_distance := 0.0
+## Performance: small NPCs can skip drawing shadows.
+var cast_shadows := true
 
 static var _mat_cache: Dictionary = {}
 static var _face_cache: Dictionary = {}
+static var _templates: Dictionary = {}   # performance: ready-made people to copy
 
 
 # --- Building ------------------------------------------------------------------
@@ -117,6 +122,7 @@ static func random_look(rng: RandomNumberGenerator, female: bool, kind: String =
 
 func build_look(look: Dictionary) -> void:
 	_look = look
+	set_meta("look", look)
 	var female: bool = look.get("body", "male") == "female"
 	var skin: Color = look.get("skin", SKIN)
 	var top: String = look.get("top", "tshirt")
@@ -142,10 +148,12 @@ func build_look(look: Dictionary) -> void:
 	var shin_col := bot_col if legs_covered else skin
 	for side: float in [-1.0, 1.0]:
 		var hip := Node3D.new()
+		hip.name = "LegL" if side < 0 else "LegR"
 		hip.position = Vector3(side * hip_w, HIP_Y, 0)
 		add_child(hip)
 		_limb_part(hip, 0.085, 0.062, THIGH, thigh_col, not legs_covered and bottom != "shorts")
 		var knee := Node3D.new()
+		knee.name = "Shin"
 		knee.position = Vector3(0, -THIGH, 0)
 		hip.add_child(knee)
 		_limb_part(knee, 0.06, 0.045, SHIN, shin_col, not legs_covered)
@@ -191,6 +199,7 @@ func build_look(look: Dictionary) -> void:
 	var sleeve_len: float = sleeve.get(top, 0.5)
 	for side: float in [-1.0, 1.0]:
 		var sh := Node3D.new()
+		sh.name = "ArmL" if side < 0 else "ArmR"
 		sh.position = Vector3(side * shoulder, HIP_Y + 0.5, 0)
 		add_child(sh)
 		_limb_part(sh, 0.052, 0.043, UPPER_ARM, skin, true)
@@ -198,6 +207,7 @@ func build_look(look: Dictionary) -> void:
 			var sl := UPPER_ARM * (sleeve_len if sleeve_len < 1.0 else 1.0)
 			_part(sh, _tapered(0.062, 0.056, sl, 8), _cloth(top_col), Vector3(0, -sl * 0.5, 0))
 		var elbow := Node3D.new()
+		elbow.name = "Forearm"
 		elbow.position = Vector3(0, -UPPER_ARM, 0)
 		sh.add_child(elbow)
 		_limb_part(elbow, 0.043, 0.035, FOREARM, top_col if sleeve_len >= 1.0 else skin, sleeve_len < 1.0)
@@ -229,6 +239,17 @@ func build_look(look: Dictionary) -> void:
 	LowPoly.box(_helmet, Vector3(0.22, 0.09, 0.05), Color("#1b1f2a"), head.position + Vector3(0, 0.005, -0.14))   # visor
 	set_helmet(helmet.a > 0.0)
 	pose_stand()
+	_merge_parts()
+
+
+## Performance: bake the ~40 little pieces into a few meshes (one per moving part).
+func _merge_parts() -> void:
+	MeshMerger.merge(self, [leg_l, leg_r, arm_l, arm_r, _helmet, _hair], lod_distance, cast_shadows)
+	for pair: Array in [[leg_l, shin_l], [leg_r, shin_r], [arm_l, forearm_l], [arm_r, forearm_r]]:
+		MeshMerger.merge(pair[0], [pair[1]], lod_distance, cast_shadows)
+		MeshMerger.merge(pair[1], [], lod_distance, cast_shadows)
+	MeshMerger.merge(_helmet, [], lod_distance, cast_shadows)
+	MeshMerger.merge(_hair, [], lod_distance, cast_shadows)
 
 
 func _build_hair(style: String, color: Color, head_pos: Vector3) -> void:
@@ -259,6 +280,70 @@ func _build_hair(style: String, color: Color, head_pos: Vector3) -> void:
 			tail.rotation.x = 0.35
 		"bun":
 			_part(_hair, _ball(0.06), mat, head_pos + Vector3(0, 0.08, 0.1))
+
+
+## Performance: a copy of a ready-made person (built once, then copied in a blink).
+## `variant` picks one of a few looks per kind. Templates are built the first time.
+static func make(rng: RandomNumberGenerator, female: bool, kind: String, lod: float, shadows: bool) -> CharacterModel:
+	var key := "%s_%s_%d_%d_%s" % [kind, female, rng.randi() % 4, int(lod), shadows]
+	if not _templates.has(key):
+		var t := CharacterModel.new()
+		t.lod_distance = lod
+		t.cast_shadows = shadows
+		t.build_look(random_look(rng, female, kind))
+		_templates[key] = t
+	var c: CharacterModel = (_templates[key] as CharacterModel).duplicate()
+	c._rebind()
+	return c
+
+
+## A copy of a specific look, built once per `key` (e.g. uniforms).
+static func make_look(key: String, look: Dictionary, lod: float = 0.0, shadows: bool = true) -> CharacterModel:
+	if not _templates.has(key):
+		var t := CharacterModel.new()
+		t.lod_distance = lod
+		t.cast_shadows = shadows
+		t.build_look(look)
+		_templates[key] = t
+	var c: CharacterModel = (_templates[key] as CharacterModel).duplicate()
+	c._rebind()
+	return c
+
+
+## Free all templates (when leaving the game).
+static func clear_templates() -> void:
+	for t in _templates.values():
+		if is_instance_valid(t):
+			(t as Node).free()
+	_templates.clear()
+
+
+## Build a few templates ahead of time (call during loading).
+static func prewarm(count: int, lod: float, shadows: bool) -> void:
+	var rng := RandomNumberGenerator.new()
+	for i in count:
+		rng.seed = i * 7919
+		var c := make(rng, i % 2 == 0, "", lod, shadows)
+		c.free()
+
+
+## After duplicate(): find our pivots again (script variables aren't copied).
+func _rebind() -> void:
+	leg_l = get_node("LegL")
+	leg_r = get_node("LegR")
+	shin_l = leg_l.get_node("Shin")
+	shin_r = leg_r.get_node("Shin")
+	arm_l = get_node("ArmL")
+	arm_r = get_node("ArmR")
+	forearm_l = arm_l.get_node("Forearm")
+	forearm_r = arm_r.get_node("Forearm")
+	_helmet = get_node("Helmet")
+	_hair = get_node("Hair")
+	_look = get_meta("look", {})
+
+
+func get_look() -> Dictionary:
+	return get_meta("look", _look)
 
 
 ## Put the helmet on or take it off. `pop` = little drop-on animation.
@@ -307,6 +392,50 @@ func pose_sit(arm_angle: float = 1.15) -> void:
 ## Back to standing straight.
 func pose_stand() -> void:
 	walk(0.0, 0.0)
+
+
+# --- Fight poses (used by the fist fight) ----------------------------------------
+
+## Fists up in front of the face, ready to fight.
+func pose_guard() -> void:
+	arm_l.rotation = Vector3(1.15, 0, 0.25)
+	arm_r.rotation = Vector3(1.15, 0, -0.25)
+	forearm_l.rotation = Vector3(1.5, 0, 0)
+	forearm_r.rotation = Vector3(1.5, 0, 0)
+
+
+## One arm shoots forward. `t` 0..1 through the punch (out and back).
+func pose_punch(right_arm: bool, t: float) -> void:
+	pose_guard()
+	var reach := sin(clampf(t, 0.0, 1.0) * PI)
+	var arm := arm_r if right_arm else arm_l
+	var fore := forearm_r if right_arm else forearm_l
+	arm.rotation.x = lerpf(1.15, 1.6, reach)
+	arm.rotation.z = lerpf(arm.rotation.z, 0.0, reach)
+	fore.rotation.x = lerpf(1.5, 0.05, reach)
+
+
+## Arms pulled back before a punch (the enemy "telegraphs" so you can block or dodge).
+func pose_windup(right_arm: bool) -> void:
+	pose_guard()
+	var arm := arm_r if right_arm else arm_l
+	arm.rotation.x = 0.4
+	(forearm_r if right_arm else forearm_l).rotation.x = 1.9
+
+
+## Blocking: both forearms up covering the face.
+func pose_block() -> void:
+	arm_l.rotation = Vector3(1.9, 0, 0.35)
+	arm_r.rotation = Vector3(1.9, 0, -0.35)
+	forearm_l.rotation = Vector3(1.2, 0, 0)
+	forearm_r.rotation = Vector3(1.2, 0, 0)
+
+
+func pose_victory() -> void:
+	arm_l.rotation = Vector3(0, 0, 2.7)
+	arm_r.rotation = Vector3(0, 0, -2.7)
+	forearm_l.rotation = Vector3.ZERO
+	forearm_r.rotation = Vector3.ZERO
 
 
 # --- Mesh helpers ----------------------------------------------------------------

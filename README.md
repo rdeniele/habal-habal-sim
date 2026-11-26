@@ -46,7 +46,25 @@ Then every day:
 9. Watch your **food, water and energy** (bottom-left). Buy food and drinks at sari-sari stores (E at the
    orange dots) or the gas station. Stand still on foot to rest. Need a pause? Tap **TAKE A BREAK** in the app.
    Let a meter hit zero and you faint and wake up at the clinic (₱500).
-10. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
+10. **Traffic is real**: cars, jeepneys, tricycles and motorbikes drive on the right, stop at red lights
+    and honk if you block them. People walk the sidewalks and cross the streets: don't hit them!
+    Every traffic light has a **countdown timer**, and the speedometer shows "LIGHT AHEAD: RED 12s".
+    Some drivers are careless: cars can **crash** into each other (or into you), and the drivers may
+    get out and fight each other. People on the street sometimes start fights too.
+11. **Open-world fighting**: on foot, left click punches anyone (combos), right click blocks, L dodges.
+    No lock-on: you aim with the camera, and you can fight several people at once.
+    Punch a person and they fight back or run (more likely to run when hurt; chase them!).
+    Punch or bump a vehicle and the driver may get out angry ("Galit ang driver!"): no buttons, you
+    decide: ride away or get off and fight. People who see a fight join in or run.
+    Knock someone down = +1 Respect. Get knocked out = clinic (₱500).
+    A passenger on board gets scared and cancels if a fight starts.
+12. **Traffic enforcers** at busy intersections give **tickets** (real LTO amounts) for red lights and speeding.
+    Your wallet can go **negative (red)**: keep working to get back out.
+    Hitting a pedestrian or fighting where enforcers/police can see = **WANTED ★**: police motorbikes chase you.
+    Lose them (stay out of sight) or get **BUSTED**: 2 days in jail per star, ₱5,000 bail per star, no income.
+13. Press **C** to cycle cameras, including **first person**: on the motor the mouse turns your head and the
+    **side mirrors** show the traffic behind you.
+14. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
 
 ## Controls
 
@@ -63,6 +81,7 @@ Then every day:
 | Sakay phone | Tab | Back |
 | Accept / decline booking | 1 / 2 | D-pad up / down |
 | Full map | M | |
+| Fight: punch / block / dodge | J or left mouse / K or right mouse (hold) / L | X / B / RB |
 | Change camera | C | R3 |
 | Controls help | F1 | |
 | Pause menu (settings, save at home, quit) | Esc | Start |
@@ -81,7 +100,7 @@ scenes/player/         on-foot player, motorcycle, follow camera
 scenes/common/         low-poly model helpers (boxes, character model)
 scenes/story/          story / tutorial script (intro, driving school, license, first motor)
 scenes/systems/        booking system (Sakay app logic), GPS target marker
-scenes/npc/            passengers
+scenes/npc/            passengers, traffic vehicles, people walking, angry drivers
 scenes/ui/             HUD, Sakay phone app, gas pump menu, dialog box, license card, motor shop
 data/dialog/           passenger personalities + lines (Hiligaynon, Bisaya, Tagalog, English)
 data/map/bacolod/      converted map: meta.json, graph.json (roads), chunks/*.json (200 m tiles)
@@ -138,6 +157,10 @@ godot --path . res://tests/map_test.tscn
 godot --path . res://tests/character_test.tscn
 ```
 
+```powershell
+godot --path . res://tests/traffic_test.tscn
+```
+
 Saves and settings live in `%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\` (`saves/slot_1.json` ... and `settings.cfg`).
 
 Most models are built from code (boxes/cylinders) as placeholders, so everything is plain text and easy to change.
@@ -153,7 +176,7 @@ Most models are built from code (boxes/cylinders) as placeholders, so everything
 5. ✅ Real Bacolod map from OpenStreetMap (roads, landmarks, GPS on real streets) + early-2000s textured low-poly look
    + new early-2000s style characters: tapered limbs with elbows/knees, painted pixel faces,
      hairstyles, outfits by passenger type (lola, nurse, student, worker...), Filipino skin tones
-6. Traffic, traffic lights, people walking around, road rage & fights (on the real roads)
+6. ✅ Traffic, traffic lights, people walking around, road rage & fist fights (on the real roads)
 7. Polish & Windows export
 
 ## Credits

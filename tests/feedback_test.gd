@@ -46,7 +46,9 @@ func _run() -> void:
 	await _until(func() -> bool: return booking.stage == BookingSystem.Stage.REQUEST, 5.0)
 	booking.accept()
 	var passenger: Passenger = booking._passenger
-	_check(not passenger.model.has_helmet(), "waiting passenger has no helmet")
+	await _until(func() -> bool: return booking._passenger != null, 2.0)
+	passenger = booking._passenger
+	_check(passenger != null and not passenger.model.has_helmet(), "waiting passenger has no helmet")
 	await _wait(0.5)
 	_check(game._gps_route.size() >= 3, "GPS route to pickup (%d points)" % game._gps_route.size())
 	_shot("fb_01_gps_minimap")

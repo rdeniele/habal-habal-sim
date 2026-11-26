@@ -20,6 +20,8 @@ var motor_damage: float = 0.0
 ## (and pay the boundary) at the end of the day; rent again the next morning.
 var rental_out: bool = false
 var debt: int = 0                # unpaid rent (boundary)
+var reckless_count: int = 0      # reckless driving offenses (fines go up)
+var tickets: int = 0             # traffic tickets so far
 var rent_unpaid_days: int = 0
 var respect: int = 0
 
@@ -59,6 +61,8 @@ func reset_new_game() -> void:
 	motor_fuel = -1.0
 	motor_damage = 0.0
 	rental_out = false
+	reckless_count = 0
+	tickets = 0
 	debt = 0
 	rent_unpaid_days = 0
 	respect = 0
@@ -81,7 +85,7 @@ func wake_up_needs() -> void:
 
 func reset_today() -> void:
 	today = {"rides": 0, "fares": 0, "tips": 0, "gas_spent": 0, "cancelled": 0,
-		"rent_paid": 0, "clinic": 0, "repairs": 0, "food": 0}
+		"rent_paid": 0, "clinic": 0, "repairs": 0, "food": 0, "fines": 0}
 
 
 func add_money(amount: int) -> void:
@@ -156,7 +160,7 @@ func to_dict() -> Dictionary:
 		"money": money, "day": day, "debt": debt, "rent_unpaid_days": rent_unpaid_days,
 		"current_motor_id": current_motor_id, "motor_color_index": motor_color_index,
 		"motor_mode": motor_mode, "rental_out": rental_out, "motor_fuel": motor_fuel, "motor_damage": motor_damage,
-		"respect": respect, "player_name": player_name, "has_license": has_license,
+		"respect": respect, "reckless_count": reckless_count, "tickets": tickets, "player_name": player_name, "has_license": has_license,
 		"story_done": story_done, "ratings": ratings.duplicate(),
 	}
 
@@ -174,6 +178,8 @@ func from_dict(d: Dictionary) -> void:
 	motor_fuel = float(d.get("motor_fuel", -1.0))
 	motor_damage = float(d.get("motor_damage", 0.0))
 	respect = int(d.get("respect", 0))
+	reckless_count = int(d.get("reckless_count", 0))
+	tickets = int(d.get("tickets", 0))
 	player_name = str(d.get("player_name", ""))
 	has_license = bool(d.get("has_license", false))
 	story_done = bool(d.get("story_done", false))

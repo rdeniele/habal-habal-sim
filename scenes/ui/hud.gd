@@ -26,6 +26,8 @@ Sakay app
 Map & needs
   M  full map     E  buy food at sari-sari
   Stand still on foot to rest (energy)
+Fight (road rage)
+  J / LMB punch   K / RMB block   L dodge
 Camera
   C  change view  Mouse  look around
 Other
@@ -48,6 +50,7 @@ var _motor_label: Label
 var _fuel_bar: ProgressBar
 var _fuel_fill: StyleBoxFlat
 var _status_label: Label
+var _light_label: Label
 var _health_panel: PanelContainer
 var _health_bar: ProgressBar
 var _food_bar: ProgressBar
@@ -74,6 +77,11 @@ var _meter_box: VBoxContainer
 var _meter_label: Label
 var _meter_bar: ProgressBar
 var _meter_fill: StyleBoxFlat
+var _wanted_label: Label
+var _wanted := 0
+var _fight_panel: PanelContainer
+var _fight_you: ProgressBar
+var _fight_them: ProgressBar
 var _fade: ColorRect
 var _caption: Label
 
@@ -211,6 +219,8 @@ func _ready() -> void:
 	_fuel_bar = _bar(vb, ACCENT)
 	_fuel_fill = _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	_status_label = _label(vb, "", 13, Color("#ffb4a2"))
+	_light_label = _label(vb, "", 15, Color.WHITE)
+	_light_label.visible = false
 
 	# --- GPS (top center, separate layer so it stays centered) ---
 	var top_center := CenterContainer.new()
@@ -242,6 +252,38 @@ func _ready() -> void:
 	_label(_help_hint, "F1  Controls", 14, Color(0.9, 0.9, 0.9))
 	_help_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_help_panel.visible = false   # starts hidden: press F1 to show
+
+	# --- Wanted stars (top center, under the GPS) ---
+	var wanted_center := CenterContainer.new()
+	wanted_center.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	wanted_center.offset_top = 78
+	wanted_center.offset_bottom = 110
+	add_child(wanted_center)
+	_wanted_label = _label(wanted_center, "", 26, Color("#ff4d5e"))
+	_wanted_label.visible = false
+	_ignore_mouse(wanted_center)
+
+	# --- Fist fight health bars (top center, under the GPS) ---
+	var fight_center := CenterContainer.new()
+	fight_center.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	fight_center.offset_top = 112
+	fight_center.offset_bottom = 210
+	add_child(fight_center)
+	_fight_panel = _panel(fight_center)
+	var fv := VBoxContainer.new()
+	_fight_panel.add_child(fv)
+	var fr := HBoxContainer.new()
+	fr.add_theme_constant_override("separation", 16)
+	fv.add_child(fr)
+	_label(fr, "YOU", 16, Color.WHITE)
+	_fight_you = _bar(fr, Color("#2ecc71"))
+	_label(fr, "VS", 16, Color("#ffd166"))
+	_fight_them = _bar(fr, Color("#ef476f"))
+	_label(fr, "DRIVER", 16, Color.WHITE)
+	var hint := _label(fv, "J / Left mouse: punch (combo x3)   K / Right mouse: block   L: dodge", 13, Color(0.85, 0.88, 0.92))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fight_panel.visible = false
+	_ignore_mouse(fight_center)
 
 	_ignore_mouse(margin)
 	_ignore_mouse(top_center)
@@ -304,6 +346,8 @@ func _process(delta: float) -> void:
 	if _toast_time > 0.0:
 		_toast_time -= delta
 		_toast_label.modulate.a = clampf(_toast_time / 0.5, 0.0, 1.0)   # fade out at the end
+	if _wanted > 0:
+		_wanted_label.modulate.a = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() * 0.006))
 	if _dialog_time > 0.0:
 		_dialog_time -= delta
 		_dialog_panel.visible = _dialog_time > 0.0
@@ -315,6 +359,8 @@ func _process(delta: float) -> void:
 
 func set_money(amount: int) -> void:
 	_money_label.text = Economy.format_peso(amount)
+	# Negative = you owe money (fines): shown in red until you work it off.
+	_money_label.add_theme_color_override("font_color", Color("#ff5d6c") if amount < 0 else MONEY_COLOR)
 
 
 func set_clock(day: int, time_text: String) -> void:
@@ -395,6 +441,23 @@ func is_menu_open() -> bool:
 		or end_of_day.visible or pause_menu.visible or (phone.is_open and phone.has_mouse)
 
 
+## Police wanted level (0-3 stars). Flashes while you're wanted.
+func set_wanted(stars: int) -> void:
+	_wanted = stars
+	_wanted_label.visible = stars > 0
+	_wanted_label.text = "WANTED  " + "★".repeat(stars) + "☆".repeat(3 - stars)
+
+
+func show_fight(you: float, them: float) -> void:
+	_fight_panel.visible = true
+	_fight_you.value = clampf(you, 0.0, 1.0) * 100.0
+	_fight_them.value = clampf(them, 0.0, 1.0) * 100.0
+
+
+func hide_fight() -> void:
+	_fight_panel.visible = false
+
+
 func toggle_help() -> void:
 	_help_panel.visible = not _help_panel.visible
 	_help_hint.visible = not _help_panel.visible
@@ -418,6 +481,16 @@ func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_n
 
 
 ## Health / food / water / energy bars (all 0..1).
+## "LIGHT AHEAD: RED 12s" on the speedometer while riding toward a traffic light.
+func set_light_ahead(info: Dictionary) -> void:
+	_light_label.visible = not info.is_empty()
+	if info.is_empty():
+		return
+	var state: int = info["state"]
+	_light_label.text = "LIGHT AHEAD:  %s  %ds   (%d m)" % [["GREEN", "YELLOW", "RED"][state], ceili(float(info["secs"])), int(info["dist"])]
+	_light_label.add_theme_color_override("font_color", [Color("#5ee38a"), Color("#ffd23f"), Color("#ff5d6c")][state])
+
+
 func update_needs(health: float, food: float, water: float, energy: float, resting: bool) -> void:
 	_health_bar.value = health * 100.0
 	_food_bar.value = food * 100.0

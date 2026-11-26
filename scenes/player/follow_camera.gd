@@ -4,12 +4,20 @@ extends Node3D
 ## The SpringArm pulls the camera closer when a wall is between it and the target,
 ## so the camera never goes inside buildings.
 ## On the motor, the camera swings behind you automatically when you stop moving the mouse.
+##
+## First person (press C until you get there): the camera sits at your eyes.
+## On the motor, the mouse turns/tilts your HEAD (look over your shoulder, check the
+## side mirrors); it slowly turns back to the front while you ride.
 
 const PRESETS: Array = [
 	{"length": 4.2, "height": 1.6},   # normal
 	{"length": 6.5, "height": 2.0},   # far
 	{"length": 2.4, "height": 1.45},  # close
+	{"fp": true},                     # first person
 ]
+const HEAD_YAW_MAX := 1.75     # ~100 degrees each way
+const HEAD_PITCH_MIN := -0.9
+const HEAD_PITCH_MAX := 0.6
 const PITCH_MIN := -1.2
 const PITCH_MAX := 0.35
 
@@ -28,6 +36,9 @@ var _idle_look_time := 10.0
 var _pitch_pivot: Node3D
 var _arm: SpringArm3D
 var _length := 4.2
+var _head_yaw := 0.0      # first person on the motor: head turn relative to the bike
+var _head_pitch := -0.1
+var _was_fp := false
 
 
 func _ready() -> void:
@@ -65,8 +76,15 @@ func snap_to(yaw: float) -> void:
 	reset_physics_interpolation()
 
 
+## Yaw used for walking direction / minimap. In first person on the motor: where your head looks.
 func get_yaw() -> float:
+	if is_first_person() and target is Motorcycle:
+		return (target as Motorcycle).heading + _head_yaw
 	return _yaw
+
+
+func is_first_person() -> bool:
+	return bool((PRESETS[_preset] as Dictionary).get("fp", false))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -77,9 +95,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion := event as InputEventMouseMotion
-		_yaw -= motion.relative.x * Settings.mouse_sensitivity
 		var y_sign := -1.0 if Settings.invert_y else 1.0
-		_pitch = clampf(_pitch - motion.relative.y * Settings.mouse_sensitivity * y_sign, PITCH_MIN, PITCH_MAX)
+		if is_first_person() and target is Motorcycle:
+			_head_yaw = clampf(_head_yaw - motion.relative.x * Settings.mouse_sensitivity, -HEAD_YAW_MAX, HEAD_YAW_MAX)
+			_head_pitch = clampf(_head_pitch - motion.relative.y * Settings.mouse_sensitivity * y_sign, HEAD_PITCH_MIN, HEAD_PITCH_MAX)
+		else:
+			_yaw -= motion.relative.x * Settings.mouse_sensitivity
+			_pitch = clampf(_pitch - motion.relative.y * Settings.mouse_sensitivity * y_sign, PITCH_MIN, PITCH_MAX)
 		_idle_look_time = 0.0
 	elif event.is_action_pressed("camera_change"):
 		_preset = (_preset + 1) % PRESETS.size()
@@ -96,6 +118,13 @@ func _physics_process(delta: float) -> void:
 	_idle_look_time += delta
 
 	if target == null:
+		return
+	var fp := is_first_person()
+	if fp != _was_fp:
+		_set_body_hidden(fp)
+		_was_fp = fp
+	if fp:
+		_first_person(delta)
 		return
 
 	var speed_ratio := 0.0
@@ -117,3 +146,36 @@ func _physics_process(delta: float) -> void:
 	global_position = global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
 	rotation = Vector3(0, _yaw, 0)
 	_pitch_pivot.rotation = Vector3(_pitch, 0, 0)
+
+
+# --- First person ------------------------------------------------------------------
+
+func _first_person(delta: float) -> void:
+	_arm.spring_length = 0.0
+	camera.near = 0.04
+	camera.fov = lerpf(camera.fov, 75.0, 1.0 - exp(-4.0 * delta))
+	if target is Motorcycle:
+		var bike := target as Motorcycle
+		# The head slowly turns back to the front while riding and not looking around.
+		if _idle_look_time > 1.5 and absf(bike.speed) > 2.0:
+			_head_yaw = lerpf(_head_yaw, 0.0, 1.0 - exp(-2.0 * delta))
+			_head_pitch = lerpf(_head_pitch, -0.1, 1.0 - exp(-2.0 * delta))
+		global_position = bike.get_head_position()
+		# yaw = bike + head turn; the head also tilts with the bike's lean
+		rotation = Vector3(0, bike.heading + _head_yaw, bike.get_lean() * 0.7)
+		_pitch_pivot.rotation = Vector3(_head_pitch, 0, 0)
+		bike.set_mirrors_active(true)
+	else:
+		global_position = target.global_position + Vector3.UP * 1.62
+		rotation = Vector3(0, _yaw, 0)
+		_pitch_pivot.rotation = Vector3(clampf(_pitch, -1.2, 1.0), 0, 0)
+
+
+## Hide your own body (and the rider) so it doesn't block the first-person view.
+func _set_body_hidden(hidden: bool) -> void:
+	camera.near = 0.04 if hidden else 0.05
+	for n in get_tree().get_nodes_in_group("fp_hide"):
+		if n.has_method("set_fp_hidden"):
+			n.set_fp_hidden(hidden)
+	if not hidden:
+		_arm.spring_length = _length

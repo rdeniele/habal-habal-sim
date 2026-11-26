@@ -33,6 +33,31 @@ static func tones(freqs: Array, note_len: float = 0.1, volume: float = 0.35) -> 
 	return wav
 
 
+## Looping police siren (wail up and down).
+static func siren() -> AudioStreamWAV:
+	if _cache.has("siren"):
+		return _cache["siren"]
+	var seconds := 1.6
+	var frames := int(RATE * seconds)
+	var data := PackedByteArray()
+	data.resize(frames * 2)
+	var phase := 0.0
+	for i in frames:
+		var t := float(i) / frames
+		var f := 650.0 + 450.0 * (0.5 - 0.5 * cos(t * TAU))   # 650 -> 1100 -> 650 Hz
+		phase += f / RATE
+		var s := (1.0 if fmod(phase, 1.0) < 0.5 else -1.0) * 0.18
+		data.encode_s16(i * 2, int(s * 32767.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = RATE
+	wav.data = data
+	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	wav.loop_end = frames
+	_cache["siren"] = wav
+	return wav
+
+
 ## Phone notification: two quick high beeps.
 static func ping() -> AudioStreamWAV:
 	return tones([1320.0, 0.0, 1760.0], 0.08)

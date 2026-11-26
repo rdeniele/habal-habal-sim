@@ -65,7 +65,7 @@ func show_summary(data: Dictionary) -> void:
 	_title.text = "End of Day %d" % int(data["day"])
 	var income := int(data["fares"]) + int(data["tips"])
 	var costs := int(data["gas_spent"]) + int(data["rent_paid"]) + int(data["clinic"]) + int(data["repairs"]) \
-		+ int(data.get("food", 0))
+		+ int(data.get("food", 0)) + int(data.get("fines", 0))
 	var net := income - costs
 	_row("Rides completed", str(int(data["rides"])), INK)
 	_row("Fares", Economy.format_peso(int(data["fares"])), GOOD)
@@ -73,6 +73,7 @@ func show_summary(data: Dictionary) -> void:
 	_row("Gas", "-" + Economy.format_peso(int(data["gas_spent"])), BAD)
 	_row("Rent / boundary", "-" + Economy.format_peso(int(data["rent_paid"])), BAD)
 	_row("Food & drinks", "-" + Economy.format_peso(int(data.get("food", 0))), BAD)
+	_row("Traffic fines", "-" + Economy.format_peso(int(data.get("fines", 0))), BAD)
 	_row("Clinic & repairs", "-" + Economy.format_peso(int(data["clinic"]) + int(data["repairs"])), BAD)
 	_row("NET TODAY", Economy.format_peso(net), GOOD if net >= 0 else BAD, 22)
 	_row("Wallet", Economy.format_peso(int(data["money"])), INK)

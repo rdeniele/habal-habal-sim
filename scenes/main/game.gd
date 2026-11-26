@@ -33,6 +33,10 @@ const BOUNDS_CHECK := 0.25        # seconds between out-of-bounds checks
 
 var day_cycle: DayCycle
 var needs: Needs
+var traffic: Traffic
+var pedestrians: Pedestrians
+var combat: Combat
+var police: Police
 var _gps_route := PackedVector3Array()
 var _gps_timer := 0.0
 var _gps_goal := ""               # "" / "home" / "shop": where the day-end GPS points
@@ -72,6 +76,34 @@ func _ready() -> void:
 	needs.setup(player, motor, hud)
 	needs.fainted.connect(_on_fainted)
 	hud.food_menu.item_chosen.connect(_on_food_chosen)
+	# Milestone 6: traffic, people walking, road rage + fights
+	traffic = Traffic.new()
+	add_child(traffic)
+	traffic.setup(world, player, motor)
+	pedestrians = Pedestrians.new()
+	add_child(pedestrians)
+	pedestrians.setup(world, traffic)
+	combat = Combat.new()
+	add_child(combat)
+	combat.setup(self, player, motor, hud, booking, traffic, pedestrians)
+	motor.hit_vehicle.connect(_on_motor_hit_vehicle)
+	motor.hit_person.connect(_on_hit_person)
+	traffic.vehicle_cut_off.connect(combat.on_cut_off)
+	pedestrians.combat = combat
+	# NPC cars crash into each other: sometimes the drivers get out and fight
+	traffic.vehicles_crashed.connect(func(a: TrafficVehicle, b: TrafficVehicle) -> void:
+		if randf() < 0.5:
+			combat.start_npc_road_rage(a, b)
+		else:
+			a.honk())
+	police = Police.new()
+	add_child(police)
+	police.setup(world, player, motor, hud, traffic)
+	police.wanted_changed.connect(hud.set_wanted)
+	police.busted.connect(_on_busted)
+	combat.assault.connect(func(where: Vector3) -> void: police.violation("fighting", where))
+	combat.fight_lost.connect(func() -> void:
+		_send_to_clinic("Natalo ka!\n(You lost the fight)", "You lost the fight and woke up at the clinic."))
 	hud.set_map_world(world)
 	_sfx = AudioStreamPlayer.new()
 	_sfx.bus = "SFX"
@@ -93,6 +125,12 @@ func _morning_message() -> void:
 		hud.show_toast("DAY %d · You have no motor. Buy or rent one at the Motor Shop." % GameState.day, 7.0)
 	else:
 		hud.show_toast("DAY %d · Maayong aga, %s!\nGet on your motor (F), then Tab and GO ONLINE." % [GameState.day, GameState.player_name], 7.0)
+
+
+func _exit_tree() -> void:
+	# free the ready-made people / vehicle templates (they live outside the scene)
+	CharacterModel.clear_templates()
+	VehicleModels.clear_cache()
 
 
 func _physics_process(delta: float) -> void:
@@ -163,6 +201,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_pause_menu()
 	elif event.is_action_pressed("debug_respawn"):
 		booking.abort_trip()
+		combat.cancel()
 		respawn_at_home()
 		hud.show_toast("Respawned at home", 2.0)
 
@@ -492,6 +531,9 @@ func _try_end_day() -> void:
 	if booking.is_busy():
 		hud.show_toast("You still have a passenger / trip! Finish it first.", 2.5)
 		return
+	if police.wanted > 0:
+		hud.show_toast("The police are after you! Lose them first.", 2.5)
+		return
 	if not _motor_at_home():
 		hud.show_toast("Park your motor at home first (it's not here).", 2.5)
 		return
@@ -519,12 +561,13 @@ func _end_day(passed_out: bool) -> void:
 	var summary := {
 		"day": GameState.day, "rides": t["rides"], "fares": t["fares"], "tips": t["tips"],
 		"gas_spent": t["gas_spent"], "rent_paid": t["rent_paid"], "clinic": t["clinic"],
-		"repairs": t["repairs"], "food": t.get("food", 0), "money": GameState.money, "debt": GameState.debt,
+		"repairs": t["repairs"], "food": t.get("food", 0), "fines": t.get("fines", 0), "money": GameState.money, "debt": GameState.debt,
 		"rating": GameState.rating, "notes": notes,
 	}
 	await hud.end_of_day.show_summary(summary)
 
 	# Next morning
+	combat.cancel()
 	_gps_goal = ""
 	GameState.wake_up_needs()
 	player.health = Player.MAX_HEALTH
@@ -646,15 +689,40 @@ func _on_food_chosen(item: Dictionary) -> void:
 
 ## Too hungry / thirsty / tired: you wake up at the clinic and pay the fee.
 func _on_fainted(reason: String) -> void:
+	_send_to_clinic("Nakuyapan ka!\n(You fainted)", reason)
+
+
+## You rode into a vehicle: it gets shoved/spins and stops; the driver may come out angry.
+func _on_motor_hit_vehicle(v: Node) -> void:
+	var car := v as TrafficVehicle
+	if car == null or not is_instance_valid(car):
+		return
+	if car.crash_time <= 0.0:
+		var push := motor.get_forward() * clampf(absf(motor.speed) * 0.25, 0.5, 4.0)
+		car.crash(push, randf_range(-0.8, 0.8) * clampf(absf(motor.speed) / 10.0, 0.2, 1.5))
+	combat.on_vehicle_hit(car)
+
+
+## You hit someone walking: they fall and shout; your passenger is not happy.
+func _on_hit_person(person: Node, impact: float) -> void:
+	(person as Pedestrian).knock(impact)
+	booking.on_hit_person()
+	police.violation("reckless", person.global_position)
+
+
+## Fainted or lost a fight: wake up at the nearest clinic, pay the fee, lose 2 hours.
+func _send_to_clinic(caption: String, reason: String) -> void:
 	if _ending_day:
 		return
 	_ending_day = true
+	combat.cancel()
+	police.clear_wanted()
 	booking.abort_trip()
 	if player.state == Player.State.RIDING:
 		motor.set_ridden(false)
 		player.set_riding(false)
 	await hud.fade_out(0.6)
-	await hud.show_caption("Nakuyapan ka!\n(You fainted)")
+	await hud.show_caption(caption)
 	var clinic: Dictionary = world.nearest_place("clinic", player.global_position)
 	var door: Vector3 = clinic["door"]
 	player.teleport(door + Vector3(0, 0.2, 0))
@@ -668,10 +736,47 @@ func _on_fainted(reason: String) -> void:
 	GameState.thirst = maxf(GameState.thirst, 50.0)
 	GameState.energy = maxf(GameState.energy, 50.0)
 	player.health = 60.0
+	player.set_riding(false)   # also resets any fight / knockdown pose
 	GameState.time_hours += 2.0   # lost time at the clinic
 	await get_tree().create_timer(1.5).timeout
 	await hud.fade_in(0.6)
 	hud.show_toast("%s\nThe clinic took care of you: -%s. Eat, drink and rest!" % [reason, Economy.format_peso(fee)], 5.0)
+	_ending_day = false
+
+
+## Caught by the police after a chase: days in jail (no income), bail and fines.
+## Your wallet can go deep into the negative - you'll have to grind back out.
+func _on_busted(stars: int) -> void:
+	if _ending_day:
+		return
+	_ending_day = true
+	combat.cancel()
+	booking.abort_trip()
+	if player.state == Player.State.RIDING:
+		motor.set_ridden(false)
+		player.set_riding(false)
+	var days := Economy.JAIL_DAYS_PER_STAR * stars
+	var bail := Economy.BAIL_PER_STAR * stars
+	await hud.fade_out(0.5)
+	await hud.show_caption("HULI KA!  (BUSTED)\nJailed for %d days" % days)
+	GameState.add_money(-bail)
+	GameState.day += days
+	GameState.time_hours = Economy.DAY_START_HOUR
+	GameState.reset_today()
+	GameState.wake_up_needs()
+	player.health = Player.MAX_HEALTH
+	var notes := "Bail & fines: -%s." % Economy.format_peso(bail)
+	if GameState.motor_mode == "rent" and GameState.rental_out:
+		# the rental shop took its motor back while you were inside, and you owe the days
+		GameState.rental_out = false
+		GameState.debt += Economy.RENT_PER_DAY * days
+		notes += " The rented motor was taken back (+%s debt)." % Economy.format_peso(Economy.RENT_PER_DAY * days)
+	respawn_at_home()
+	_sync_motor_to_state()
+	SaveManager.save_game(maxi(GameState.save_slot, 1))   # no reloading your way out of jail
+	await get_tree().create_timer(2.0).timeout
+	await hud.fade_in(0.6)
+	hud.show_toast("You spent %d days in jail. %s\nTime to work it off, boss." % [days, notes], 6.0)
 	_ending_day = false
 
 
@@ -766,7 +871,9 @@ func _update_prompt() -> void:
 		hud.set_prompt("")
 		return
 	var story_prompt := story.get_prompt()
-	if story_prompt != "":
+	if combat.is_in_combat() and player.state == Player.State.ON_FOOT:
+		text = ""
+	elif story_prompt != "":
 		text = story_prompt
 	elif motor.is_active and _can_refuel():
 		text = "[E]  Magpagasolina  (Refuel)"
@@ -795,6 +902,7 @@ func _update_hud() -> void:
 	var riding := player.state == Player.State.RIDING
 	hud.set_money(GameState.money)
 	hud.set_clock(GameState.day, GameState.get_time_string())
+	hud.set_light_ahead(traffic.upcoming_light(motor.global_position, motor.get_forward()) if riding else {})
 	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
 	_update_gps()
 

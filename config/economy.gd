@@ -41,6 +41,21 @@ const LICENSE_FEE: int = 585
 const CLINIC_FEE: int = 500
 const REPAIR_COST_PER_DAMAGE_POINT: int = 40   # damage is 0-100
 
+# --- Traffic fines (from traffic enforcers) --------------------------------
+## Based on Philippine rules (LTO Joint Administrative Order 2014-01 / RA 4136).
+## Amounts change over time and some cities have their own ordinances: tweak as needed.
+const FINE_RED_LIGHT: int = 1000            # Disregarding traffic signs / signals
+const FINE_RECKLESS: Array = [2000, 3000, 10000]   # Reckless driving: 1st, 2nd, 3rd+ offense
+const FINE_SPEEDING: int = 1000             # Over the speed limit (approx.; varies by city)
+const FINE_FIGHTING: int = 5000             # Fighting in public / alarms and scandals (approx.)
+## Getting BUSTED by the police (after a chase): days in jail and bail/fines per wanted star.
+## You earn nothing while in jail, and your wallet can go deep into the negative.
+const JAIL_DAYS_PER_STAR: int = 2
+const BAIL_PER_STAR: int = 5000
+## RA 4136 speed limit for motorcycles on city through-streets is 40 km/h.
+const SPEED_LIMIT_KMH: float = 40.0
+const SPEED_TOLERANCE_KMH: float = 10.0     # enforcers only flag you this far over the limit
+
 # --- Food & drinks (sari-sari stores) -------------------------------------
 ## hunger / thirst / energy = how much each meter goes up (meters are 0-100).
 const FOOD_ITEMS: Array = [

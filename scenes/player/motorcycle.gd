@@ -8,6 +8,8 @@ extends CharacterBody3D
 signal crashed(impact_speed: float, wall_normal: Vector3)
 signal ran_out_of_fuel
 signal bumped(impact_speed: float)   # small hit that doesn't throw you off
+signal hit_vehicle(vehicle: Node)     # ran into a traffic vehicle (road rage chance)
+signal hit_person(person: Node, impact_speed: float)
 
 const GRAVITY := 22.0
 const BRAKE_DECEL := 14.0        # m/s^2 with full brake
@@ -44,6 +46,10 @@ var _fork: Node3D
 var _front_wheel: Node3D
 var _rear_wheel: Node3D
 var _rider: CharacterModel
+var _fp_hidden := false
+var _mirrors: Array[Dictionary] = []   # {"viewport": SubViewport, "camera": Camera3D, "glass": Node3D, "side": float}
+var _mirrors_active := false
+var _mirror_hold := 0.0
 var _headlight: SpotLight3D
 var _paint: StandardMaterial3D
 var _crash_cooldown := 0.0
@@ -58,7 +64,7 @@ var _horn_phase_b := 0.0
 
 func _ready() -> void:
 	collision_layer = 4     # "motorcycles" layer
-	collision_mask = 1      # only bumps into the world
+	collision_mask = 1 | 8  # the world + traffic and people
 	floor_snap_length = 0.4
 	floor_max_angle = deg_to_rad(50.0)
 
@@ -112,9 +118,80 @@ func place(pos: Vector3, new_heading: float) -> void:
 
 func set_ridden(on: bool) -> void:
 	is_ridden = on
-	_rider.visible = on
+	_rider.visible = on and not _fp_hidden
 	if on:
 		is_fallen = false   # picking the motor back up
+
+
+## Where the rider's eyes are (for the first-person camera).
+func get_head_position() -> Vector3:
+	return _lean_pivot.global_transform * Vector3(0, 1.56, 0.24)
+
+
+func get_lean() -> float:
+	return _lean_pivot.rotation.z
+
+
+## First-person camera: hide the rider body so we look out from the helmet.
+func set_fp_hidden(hidden: bool) -> void:
+	_fp_hidden = hidden
+	_rider.visible = is_ridden and not hidden
+
+
+## Side mirrors only render while someone looks at them (first person). Call every frame.
+func set_mirrors_active(on: bool) -> void:
+	_mirror_hold = 0.25 if on else 0.0
+
+
+## Two side mirrors on the handlebar. Each has a little camera looking back; its picture
+## is shown (flipped like a real mirror) on the mirror glass.
+func _build_mirrors() -> void:
+	for side: float in [-1.0, 1.0]:
+		LowPoly.box(_fork, Vector3(0.025, 0.24, 0.025), Color("#151515"), Vector3(side * 0.31, 1.13, 0.22))   # stalk
+		var housing := LowPoly.box(_fork, Vector3(0.16, 0.11, 0.035), Color("#151515"), Vector3(side * 0.34, 1.27, 0.2))
+		housing.rotation.y = side * 0.25
+		var sv := SubViewport.new()
+		sv.size = Vector2i(192, 128)
+		sv.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(sv)
+		var cam := Camera3D.new()
+		cam.fov = 45.0
+		cam.far = 300.0
+		sv.add_child(cam)
+		var glass := MeshInstance3D.new()
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.145, 0.095)
+		glass.mesh = quad
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_texture = sv.get_texture()
+		mat.uv1_scale = Vector3(-1, 1, 1)   # mirror image (flip left/right)
+		mat.uv1_offset = Vector3(1, 0, 0)
+		glass.material_override = mat
+		glass.position = Vector3(side * 0.34, 1.27, 0.22)
+		glass.rotation.y = side * 0.25   # quad faces +Z = toward the rider
+		_fork.add_child(glass)
+		_mirrors.append({"viewport": sv, "camera": cam, "glass": glass, "side": side})
+
+
+func _update_mirrors(delta: float) -> void:
+	_mirror_hold = maxf(0.0, _mirror_hold - delta)
+	var on := _mirror_hold > 0.0 and is_ridden
+	if on != _mirrors_active:
+		_mirrors_active = on
+		for m in _mirrors:
+			(m["viewport"] as SubViewport).render_target_update_mode = \
+				SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	if not on:
+		return
+	var back := -get_forward()
+	for m in _mirrors:
+		var glass: Node3D = m["glass"]
+		var side: float = m["side"]
+		var cam: Camera3D = m["camera"]
+		# look backward and a little outward, like a real mirror angle
+		var dir := back.rotated(Vector3.UP, -side * 0.18)
+		cam.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), glass.global_position + Vector3(0, 0.05, 0))
 
 
 func set_headlight(on: bool) -> void:
@@ -273,6 +350,11 @@ func _handle_collisions(forward: Vector3, pre_speed: float) -> void:
 		if head_on <= 0.05:
 			continue
 		var impact := absf(pre_speed) * head_on
+		var other := col.get_collider()
+		if other is Pedestrian and is_ridden:
+			hit_person.emit(other, impact)
+		elif other is TrafficVehicle and is_ridden and impact > 1.0:
+			hit_vehicle.emit(other)
 		speed *= clampf(1.0 - head_on * 1.2, 0.0, 1.0)
 		if is_ridden and impact >= CRASH_SPEED and _crash_cooldown <= 0.0:
 			_crash_cooldown = 1.0
@@ -358,6 +440,8 @@ func _build_model() -> void:
 	_rider.pose_sit()
 	_rider.position = Vector3(0, -0.1, 0.3)
 	_rider.visible = false
+	add_to_group("fp_hide")
+	_build_mirrors()
 
 
 ## A wheel = tire + hub + one spoke (so you can see it spinning).
@@ -389,7 +473,8 @@ func _setup_audio() -> void:
 	_playback = _audio.get_stream_playback() as AudioStreamGeneratorPlayback
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_update_mirrors(delta)
 	if _playback == null:
 		return
 	var frames := _playback.get_frames_available()

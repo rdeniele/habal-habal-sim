@@ -337,15 +337,18 @@ func _pick_near_home(exclude: Dictionary) -> Dictionary:
 
 ## Random address point whose city-block distance from `from` is in [min_m, max_m].
 func _pick_point(from: Vector3, min_m: float, max_m: float, exclude: Dictionary) -> Dictionary:
-	var points := world.address_points
-	for attempt in 60:
-		var p: Dictionary = points[_rng.randi() % points.size()]
+	# List every spot in range first, then pick one at random (on a big city map,
+	# random guessing across the whole city often missed the few spots near you).
+	var options: Array[Dictionary] = []
+	for p in world.address_points:
 		if p == exclude:
 			continue
 		var d := _city_dist(from, p["pos"])
 		if d >= min_m and d <= max_m:
-			return p
-	return {}
+			options.append(p)
+	if options.is_empty():
+		return {}
+	return options[_rng.randi() % options.size()]
 
 
 func accept() -> void:
@@ -455,6 +458,21 @@ func _maybe_complain() -> void:
 		return
 	_complain_cooldown = 6.0
 	_say("complain")
+
+
+## A fist fight started: a passenger on board gets off scared and cancels (no fare, 1 star).
+func on_fight_started() -> void:
+	if stage == Stage.TO_DROPOFF and _passenger != null:
+		on_crash()
+		hud.show_toast("Your passenger got scared and left!\nNo fare · ★☆☆☆☆", 3.5)
+
+
+## You hit someone walking: big comfort hit for your passenger.
+func on_hit_person() -> void:
+	if stage == Stage.TO_DROPOFF:
+		_comfort = maxf(0.0, _comfort - 40.0)
+		_complain_cooldown = 0.0
+		_maybe_complain()
 
 
 ## Called by the game when the rider crashes and falls off.

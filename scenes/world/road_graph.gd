@@ -12,6 +12,8 @@ var _points: Array[Vector3] = []
 var segments: Array[Dictionary] = []
 var _seg_grid: Dictionary = {}     # Vector2i cell -> Array[int] segment indexes
 var _point_grid: Dictionary = {}   # Vector2i cell -> Array[int] point ids
+var _width := {}                   # "a_b" (smaller id first) -> road width
+var _major_points := {}            # point id -> true if a major road touches it
 
 
 func add_point(pos: Vector3) -> int:
@@ -29,6 +31,10 @@ func add_road(a: int, b: int, width: float, major: bool = false) -> void:
 	_astar.connect_points(a, b, true)
 	var idx := segments.size()
 	segments.append({"a": a, "b": b, "width": width, "major": major})
+	_width[_key(a, b)] = width
+	if major:
+		_major_points[a] = true
+		_major_points[b] = true
 	# register the segment in every grid cell it passes through
 	var pa := _points[a]
 	var pb := _points[b]
@@ -78,6 +84,43 @@ func points_near(center: Vector3, radius: float) -> Array[Vector3]:
 
 func point_count() -> int:
 	return _points.size()
+
+
+# --- Helpers for traffic and pedestrians ------------------------------------------
+
+static func _key(a: int, b: int) -> String:
+	return "%d_%d" % [mini(a, b), maxi(a, b)]
+
+
+## Points connected to `id` by a road.
+func neighbors(id: int) -> PackedInt64Array:
+	return _astar.get_point_connections(id)
+
+
+func degree(id: int) -> int:
+	return _astar.get_point_connections(id).size()
+
+
+func road_width(a: int, b: int) -> float:
+	return float(_width.get(_key(a, b), 6.0))
+
+
+func is_major_point(id: int) -> bool:
+	return _major_points.has(id)
+
+
+## Ids of road points within `radius` of `center`.
+func point_ids_near(center: Vector3, radius: float) -> Array[int]:
+	var out: Array[int] = []
+	var c := _cell_of(center)
+	var r := ceili(radius / CELL)
+	var flat := Vector3(center.x, 0, center.z)
+	for x in range(c.x - r, c.x + r + 1):
+		for z in range(c.y - r, c.y + r + 1):
+			for id: int in _point_grid.get(Vector2i(x, z), []):
+				if _points[id].distance_to(flat) <= radius:
+					out.append(id)
+	return out
 
 
 func get_point(id: int) -> Vector3:

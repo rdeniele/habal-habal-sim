@@ -8,7 +8,8 @@ extends GameWorld
 ## street lamps, trees, sari-sari stores. Chunks build a few at a time so the game doesn't freeze.
 
 const MAP_DIR := "res://data/map/bacolod/"
-const BUILD_BUDGET_MSEC := 6       # max time per frame spent building chunks
+const BUILD_BUDGET_MSEC := 4       # max time per frame spent finishing chunks
+const MAX_THREADS := 3             # chunks prepared in the background at the same time
 const STREAM_INTERVAL := 0.5       # seconds between "which chunks do I need" checks
 
 const WALL_COLORS := ["#f2c14e", "#f78154", "#4d9de0", "#7bc96f", "#e8a0a0", "#f4e9cd",
@@ -28,6 +29,10 @@ var _chunk_size := 200.0
 var _available := {}                 # chunk key -> true
 var _loaded := {}                    # chunk key -> Node3D
 var _queue: Array[String] = []       # chunks waiting to be built (nearest first)
+var _needed := {}                    # chunks that should be loaded right now
+var _tasks := {}                     # chunk key -> background task id
+var _prepared := {}                  # chunk key -> prepared data (filled by threads)
+var _mutex := Mutex.new()
 var _stream_center := Vector3.ZERO
 var _stream_timer := 0.0
 var _map_rect := Rect2()
@@ -145,25 +150,56 @@ func update_streaming(pos: Vector3, now: bool = false) -> void:
 			(_loaded[key] as Node3D).queue_free()
 			_loaded.erase(key)
 	_queue = _queue.filter(func(k: String) -> bool: return needed.has(k))
+	_needed = needed
 	if now:
-		while not _queue.is_empty():
-			_build_next_chunk()
+		# load everything right away (spawn / teleport): no waiting for threads
+		for key: String in _queue:
+			if not _loaded.has(key):
+				_add_chunk(key, _prepare_chunk(key))
+		_queue.clear()
 
 
+## Start background preparation of queued chunks, and finish prepared ones (a little per frame).
 func _process(delta: float) -> void:
 	_stream_timer -= delta
+	while not _queue.is_empty() and _tasks.size() < MAX_THREADS:
+		var key: String = _queue.pop_front()
+		if _loaded.has(key) or _tasks.has(key):
+			continue
+		_tasks[key] = WorkerThreadPool.add_task(_prepare_task.bind(key), false, "chunk " + key)
 	var start := Time.get_ticks_msec()
-	while not _queue.is_empty() and Time.get_ticks_msec() - start < BUILD_BUDGET_MSEC:
-		_build_next_chunk()
+	for key: String in _tasks.keys():
+		if Time.get_ticks_msec() - start >= BUILD_BUDGET_MSEC:
+			break
+		if not WorkerThreadPool.is_task_completed(_tasks[key]):
+			continue
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+		_tasks.erase(key)
+		_mutex.lock()
+		var d: Dictionary = _prepared.get(key, {})
+		_prepared.erase(key)
+		_mutex.unlock()
+		if not d.is_empty() and _needed.has(key) and not _loaded.has(key):
+			_add_chunk(key, d)
 
 
-func _build_next_chunk() -> void:
-	var key: String = _queue.pop_front()
-	if _loaded.has(key):
-		return
-	var node := _build_chunk(key)
+func _prepare_task(key: String) -> void:
+	var d := _prepare_chunk(key)
+	_mutex.lock()
+	_prepared[key] = d
+	_mutex.unlock()
+
+
+func _add_chunk(key: String, d: Dictionary) -> void:
+	var node := _finish_chunk(key, d)
 	_loaded[key] = node
 	add_child(node)
+
+
+func _exit_tree() -> void:
+	for key: String in _tasks:
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+	_tasks.clear()
 
 
 # --- Loading data -------------------------------------------------------------------
@@ -382,90 +418,96 @@ func _build_backdrop() -> void:
 
 # --- Chunks ---------------------------------------------------------------------------
 
-func _build_chunk(key: String) -> Node3D:
-	var root := Node3D.new()
-	root.name = "Chunk_" + key
+## Heavy part, safe to run on a background thread: read the chunk file and compute all
+## geometry (no scene nodes are touched here).
+func _prepare_chunk(key: String) -> Dictionary:
 	var data := _read_json(MAP_DIR + "chunks/" + key + ".json")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key)
-
+	var out := {
+		"side": MeshBuilder.new(), "road": MeshBuilder.new(), "paint": MeshBuilder.new(),
+		"area": MeshBuilder.new(), "wall": MeshBuilder.new(), "roof": MeshBuilder.new(),
+		"faces": PackedVector3Array(), "posts": [] as Array[Transform3D], "lamps": [] as Array[Transform3D],
+		"wires": [] as Array[Transform3D], "trees": [] as Array[Transform3D],
+	}
 	# Roads: sidewalk band underneath, asphalt on top, dashed center lines on big roads
-	var mb_side := MeshBuilder.new()
-	var mb_road := MeshBuilder.new()
-	var mb_paint := MeshBuilder.new()
-	var posts: Array[Transform3D] = []
-	var lamps: Array[Transform3D] = []
-	var wires: Array[Transform3D] = []
 	for r: Dictionary in data.get("roads", []):
 		var pts := _pts(r["pts"])
 		var w := float(r["w"])
 		var k: String = r["k"]
 		var lift := 0.005 if MAJOR_CLASSES.has(k) else 0.0
 		if k != "service":
-			_strip(mb_side, pts, w * 0.5 + 1.8, 0.02, 4.0)
-		_strip(mb_road, pts, w * 0.5, 0.04 + lift, 5.0)
+			_strip(out["side"], pts, w * 0.5 + 1.8, 0.02, 4.0)
+		_strip(out["road"], pts, w * 0.5, 0.04 + lift, 5.0)
 		if w >= 9.0:
-			_dashes(mb_paint, pts, 0.06 + lift)
+			_dashes(out["paint"], pts, 0.06 + lift)
 		if w >= 6.0 and k != "service":
-			_street_posts(pts, w, posts, lamps, wires)
-
+			_street_posts(pts, w, out["posts"], out["lamps"], out["wires"])
 	# Small parks / water areas + trees in parks
-	var mb_area := MeshBuilder.new()
-	var trees: Array[Transform3D] = []
 	for a: Dictionary in data.get("areas", []):
-		var poly := _add_area(mb_area, a)
+		var poly := _add_area(out["area"], a)
 		if a["k"] in ["park", "grass", "cemetery"] and poly.size() >= 3:
-			_scatter_trees(poly, rng, trees)
+			_scatter_trees(poly, rng, out["trees"])
 	for rv: Dictionary in data.get("rivers", []):
-		_strip(mb_area, _pts(rv["pts"]), float(rv["w"]) * 0.5, 0.03, 6.0, Color("#3f87b5"))
-
+		_strip(out["area"], _pts(rv["pts"]), float(rv["w"]) * 0.5, 0.03, 6.0, Color("#3f87b5"))
 	# Buildings
-	var mb_wall := MeshBuilder.new()
-	var mb_roof := MeshBuilder.new()
 	var faces := PackedVector3Array()
 	for bd: Dictionary in data.get("buildings", []):
-		_add_building(bd, mb_wall, mb_roof, faces)
+		_add_building(bd, out["wall"], out["roof"], faces)
+	out["faces"] = faces
+	return out
 
-	for pair: Array in [[mb_side, _mat_sidewalk], [mb_road, _mat_road], [mb_paint, _mat_paint],
-			[mb_area, _mat_ground], [mb_wall, _mat_wall], [mb_roof, _mat_roof]]:
-		var mb: MeshBuilder = pair[0]
+
+## Quick part, on the main thread: turn prepared data into meshes, collision and props.
+func _finish_chunk(key: String, d: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Chunk_" + key
+	for pair: Array in [["side", _mat_sidewalk, false], ["road", _mat_road, false], ["paint", _mat_paint, false],
+			["area", _mat_ground, false], ["wall", _mat_wall, true], ["roof", _mat_roof, true]]:
+		var mb: MeshBuilder = d[pair[0]]
 		if mb.is_empty():
 			continue
 		var mi := MeshInstance3D.new()
 		mi.mesh = mb.commit(pair[1])
-		if mb != mb_wall and mb != mb_roof:
+		if not pair[2]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
 
-	if not faces.is_empty():
+	var posts: Array[Transform3D] = d["posts"]
+	var faces: PackedVector3Array = d["faces"]
+	if not faces.is_empty() or not posts.is_empty():
 		var body := StaticBody3D.new()
-		var cs := CollisionShape3D.new()
-		var shape := ConcavePolygonShape3D.new()
-		shape.backface_collision = true
-		shape.set_faces(faces)
-		cs.shape = shape
-		body.add_child(cs)
-		root.add_child(body)
+		if not faces.is_empty():
+			var cs := CollisionShape3D.new()
+			var shape := ConcavePolygonShape3D.new()
+			shape.backface_collision = true
+			shape.set_faces(faces)
+			cs.shape = shape
+			body.add_child(cs)
 		# Street posts are solid too
+		var post_box := BoxShape3D.new()
+		post_box.size = Vector3(0.3, 7.5, 0.3)
 		for t in posts:
 			var pcs := CollisionShape3D.new()
-			var box := BoxShape3D.new()
-			box.size = Vector3(0.3, 7.5, 0.3)
-			pcs.shape = box
+			pcs.shape = post_box
 			pcs.transform = t
 			body.add_child(pcs)
+		root.add_child(body)
 
 	_add_multimesh(root, _pole_mesh, posts, true)
-	_add_multimesh(root, _lamp_mesh, lamps, false)
-	_add_multimesh(root, _wire_mesh, wires, false)
+	_add_multimesh(root, _lamp_mesh, d["lamps"], false)
+	_add_multimesh(root, _wire_mesh, d["wires"], false)
+	var trees: Array[Transform3D] = d["trees"]
 	var leaves: Array[Transform3D] = []
 	for t in trees:
 		leaves.append(t.translated_local(Vector3(0, 2.9, 0)))
 	_add_multimesh(root, _trunk_mesh, trees, true)
 	_add_multimesh(root, _leaves_mesh, leaves, true)
 
-	for s: Dictionary in _stalls_by_chunk.get(key, []):
-		_add_stall_prop(root, s, rng)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key) + 1
+	for st: Dictionary in _stalls_by_chunk.get(key, []):
+		_add_stall_prop(root, st, rng)
 	return root
 
 
@@ -652,6 +694,7 @@ func _add_stall_prop(root: Node3D, s: Dictionary, rng: RandomNumberGenerator) ->
 	LowPoly.box(lot, Vector3(0.1, 2.4, 0.1), Color("#6b5b4b"), Vector3(-1.3, 1.2, -0.5))
 	LowPoly.box(lot, Vector3(0.1, 2.4, 0.1), Color("#6b5b4b"), Vector3(1.3, 1.2, -0.5))
 	LowPoly.box(lot, Vector3(1.8, 0.5, 0.06), Color("#d62828"), Vector3(0, 2.85, -0.3))     # sign
+	MeshMerger.merge(lot, [], 250.0)
 
 
 ## Transform for building things at a place: origin at `door`,
@@ -707,6 +750,7 @@ func _build_places() -> void:
 				LowPoly.box(lot, Vector3(1.0, 0.3, 0.1), Color("#e63946"), Vector3(1.5, 3.1, 0.3))
 				LowPoly.box(lot, Vector3(0.3, 1.0, 0.1), Color("#e63946"), Vector3(1.5, 3.1, 0.3))
 				LowPoly.label(lot, p["name"], Vector3(1.5, 4.4, 0.3), 0.6)
+		MeshMerger.merge(lot, [], 600.0)   # performance: one mesh per place
 
 
 func _place_box(lot: Node3D, body: StaticBody3D, size: Vector3, pos: Vector3, wall: Color, roof: Color) -> void:
@@ -776,6 +820,7 @@ func _build_landmarks() -> void:
 				_capitol(node, body)
 			_:
 				pass
+		MeshMerger.merge(node)   # performance: one mesh per landmark
 		LowPoly.label(node, str(lm["name"]), Vector3(0, _landmark_label_height(str(lm["id"])), 0), 2.0)
 
 

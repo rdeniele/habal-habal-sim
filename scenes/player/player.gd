@@ -15,7 +15,7 @@ const MAX_HEALTH := 100.0
 
 ## Collision layers (bit values): 1 = world, 2 = player, 4 = motorcycles
 const LAYER_PLAYER := 2
-const MASK_ON_FOOT := 1 | 4
+const MASK_ON_FOOT := 1 | 4 | 8   # world, motorcycles, traffic/people
 
 ## Rider look (Sakay app colors: teal jacket + helmet)
 const JACKET_COLOR := Color("#14a39a")
@@ -26,6 +26,8 @@ var state: State = State.ON_FOOT
 var camera: FollowCamera
 var health: float = MAX_HEALTH
 var input_enabled := true
+var fight_target: Node3D = null   # during a fist fight you always face your opponent
+var in_combat := false             # no health regen while fighting
 
 var _yaw_pivot: Node3D
 var _model: CharacterModel
@@ -48,6 +50,7 @@ func _ready() -> void:
 
 	_yaw_pivot = Node3D.new()
 	add_child(_yaw_pivot)
+	add_to_group("fp_hide")
 	_model = CharacterModel.new()
 	_yaw_pivot.add_child(_model)
 	_model.build(JACKET_COLOR, PANTS_COLOR, HELMET_COLOR)
@@ -62,7 +65,7 @@ func _physics_process(delta: float) -> void:
 		State.ON_FOOT:
 			_process_walk(delta)
 	# Slow health regen, but only when you've eaten and had water.
-	if GameState.hunger > 20.0 and GameState.thirst > 20.0:
+	if GameState.hunger > 20.0 and GameState.thirst > 20.0 and not in_combat:
 		health = minf(MAX_HEALTH, health + 1.5 * delta)
 
 
@@ -82,8 +85,11 @@ func _process_walk(delta: float) -> void:
 	_apply_gravity(delta)
 	move_and_slide()
 
-	# Turn the body to face where we're walking.
-	if dir.length() > 0.1:
+	# Turn the body to face where we're walking (or your opponent in a fight).
+	if in_combat and camera != null:
+		# Fighting: no lock-on. You face where the camera looks, so you aim punches with the mouse.
+		_yaw_pivot.rotation.y = lerp_angle(_yaw_pivot.rotation.y, camera.get_yaw(), 1.0 - exp(-TURN_SPEED * 1.5 * delta))
+	elif dir.length() > 0.1:
 		var target_yaw := atan2(-dir.x, -dir.z)
 		_yaw_pivot.rotation.y = lerp_angle(_yaw_pivot.rotation.y, target_yaw, 1.0 - exp(-TURN_SPEED * delta))
 
@@ -136,6 +142,15 @@ func teleport(pos: Vector3) -> void:
 	global_position = pos
 	velocity = Vector3.ZERO
 	reset_physics_interpolation()
+
+
+## First-person camera: hide our own body.
+func set_fp_hidden(hidden: bool) -> void:
+	_yaw_pivot.visible = not hidden
+
+
+func get_model() -> CharacterModel:
+	return _model
 
 
 func get_facing_yaw() -> float:
