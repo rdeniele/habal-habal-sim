@@ -24,12 +24,13 @@ On motor
 Sakay app
   Tab  phone      1 / 2  accept / decline
 Map & needs
-  M  full map     E  buy food at sari-sari
+  M  full map (click: pin a place, right click: remove)
+  E  buy food at sari-sari
   Stand still on foot to rest (energy)
-Fight (road rage)
+Fight
   J / LMB punch   K / RMB block   L dodge
 Camera
-  C  change view  Mouse  look around
+  C  change view (starts in first person)
 Other
   F1  hide this   Esc  free the mouse
   F8  respawn at home
@@ -79,6 +80,9 @@ var _meter_bar: ProgressBar
 var _meter_fill: StyleBoxFlat
 var _wanted_label: Label
 var _wanted := 0
+var _wanted_panel: PanelContainer
+var _offense_label: Label
+var _pull_over_label: Label
 var _fight_panel: PanelContainer
 var _fight_you: ProgressBar
 var _fight_them: ProgressBar
@@ -253,14 +257,29 @@ func _ready() -> void:
 	_help_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
 	_help_panel.visible = false   # starts hidden: press F1 to show
 
-	# --- Wanted stars (top center, under the GPS) ---
+	# --- Wanted stars + offenses, and the enforcer pull-over timer (top center, under the GPS) ---
 	var wanted_center := CenterContainer.new()
 	wanted_center.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	wanted_center.offset_top = 78
-	wanted_center.offset_bottom = 110
+	wanted_center.offset_top = 80
+	wanted_center.offset_bottom = 200
 	add_child(wanted_center)
-	_wanted_label = _label(wanted_center, "", 26, Color("#ff4d5e"))
-	_wanted_label.visible = false
+	var wanted_col := VBoxContainer.new()
+	wanted_col.alignment = BoxContainer.ALIGNMENT_BEGIN
+	wanted_center.add_child(wanted_col)
+	_wanted_panel = _panel(wanted_col)
+	var wv := VBoxContainer.new()
+	wv.add_theme_constant_override("separation", 0)
+	_wanted_panel.add_child(wv)
+	_wanted_label = _label(wv, "", 30, Color("#ffd23f"))
+	_wanted_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_offense_label = _label(wv, "", 14, Color("#ffb4a2"))
+	_offense_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_wanted_panel.visible = false
+	_pull_over_label = _label(wanted_col, "", 20, Color("#d4ff3a"))
+	_pull_over_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pull_over_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_pull_over_label.add_theme_constant_override("outline_size", 8)
+	_pull_over_label.visible = false
 	_ignore_mouse(wanted_center)
 
 	# --- Fist fight health bars (top center, under the GPS) ---
@@ -347,7 +366,9 @@ func _process(delta: float) -> void:
 		_toast_time -= delta
 		_toast_label.modulate.a = clampf(_toast_time / 0.5, 0.0, 1.0)   # fade out at the end
 	if _wanted > 0:
-		_wanted_label.modulate.a = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() * 0.006))
+		# stars blink red/yellow like a police light
+		var blink := absf(sin(Time.get_ticks_msec() * 0.006))
+		_wanted_label.add_theme_color_override("font_color", Color("#ffd23f").lerp(Color("#ff4d5e"), blink))
 	if _dialog_time > 0.0:
 		_dialog_time -= delta
 		_dialog_panel.visible = _dialog_time > 0.0
@@ -438,14 +459,23 @@ func show_caption(text: String) -> void:
 ## True when any clickable/blocking UI is open.
 func is_menu_open() -> bool:
 	return dialog_box.is_open or license_card.visible or shop.visible or refuel_menu.visible or food_menu.visible \
-		or end_of_day.visible or pause_menu.visible or (phone.is_open and phone.has_mouse)
+		or end_of_day.visible or pause_menu.visible or (phone.is_open and phone.has_mouse) or _full_map_layer.visible
 
 
-## Police wanted level (0-3 stars). Flashes while you're wanted.
-func set_wanted(stars: int) -> void:
+## Police wanted level (0-3 stars) and what you did, top center. Stars blink while wanted.
+func set_wanted(stars: int, offenses: Array = []) -> void:
 	_wanted = stars
-	_wanted_label.visible = stars > 0
+	_wanted_panel.visible = stars > 0
 	_wanted_label.text = "WANTED  " + "★".repeat(stars) + "☆".repeat(3 - stars)
+	_offense_label.text = "\n".join(offenses.map(func(o: String) -> String: return "• " + o))
+	_offense_label.visible = not offenses.is_empty()
+
+
+## "PULL OVER! 8s" while a traffic enforcer waits for you (0 = hide).
+func set_pull_over(seconds: float) -> void:
+	_pull_over_label.visible = seconds > 0.0
+	if seconds > 0.0:
+		_pull_over_label.text = "PRRT! Pull over by the enforcer: %ds   (or run!)" % ceili(seconds)
 
 
 func show_fight(you: float, them: float) -> void:
@@ -515,9 +545,21 @@ func update_map(center: Vector3, view_yaw: float, facing_yaw: float, route: Pack
 		full_map.refresh()
 
 
+## Your map pin (both maps) and nearby traffic enforcers (minimap).
+func set_map_pin(on: bool, pos: Vector3) -> void:
+	for m: Minimap in [minimap, full_map]:
+		m.has_pin = on
+		m.pin = pos
+
+
+func set_map_enforcers(positions: PackedVector3Array) -> void:
+	minimap.enforcers = positions
+
+
 func set_map_world(world: GameWorld) -> void:
 	minimap.world = world
 	full_map.world = world
+	full_map._pack_full_map()   # pack the whole city's roads now (while loading), not on the first M press
 
 
 func toggle_full_map() -> void:

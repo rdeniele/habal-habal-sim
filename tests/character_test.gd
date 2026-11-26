@@ -103,4 +103,6 @@ func _wait(s: float) -> void:
 
 
 func _shot(n: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return   # no screen to capture when running without a window
 	get_viewport().get_texture().get_image().save_png("user://screenshots/%s.png" % n)

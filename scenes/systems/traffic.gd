@@ -306,24 +306,42 @@ func _build_light(id: int) -> Dictionary:
 		var d := (p - g.get_point(from_id)).normalized()   # direction traffic travels
 		var right := Vector3(-d.z, 0, d.x)
 		var w := g.road_width(id, from_id)
-		var pos := p - d * (w * 0.5 + 3.0) + right * (w * 0.5 + 1.2)
+		# Like real intersections: the light for your lane stands on the FAR corner (across the
+		# intersection, on your right) and faces you, so you see it the whole way in.
+		var pos := p + d * (w * 0.5 + 2.0) + right * (w * 0.5 + 1.2)
 		var pole := Node3D.new()
 		node.add_child(pole)
-		pole.transform = Transform3D(Basis(Vector3.UP, atan2(-d.x, -d.z)), pos)
+		# pole's -Z (where the lamps are) points back at the drivers coming in
+		pole.transform = Transform3D(Basis(Vector3.UP, atan2(d.x, d.z)), pos)
 		LowPoly.box(pole, Vector3(0.14, 4.2, 0.14), Color("#3b3b3b"), Vector3(0, 2.1, 0))
 		LowPoly.box(pole, Vector3(0.4, 1.1, 0.3), Color("#1f1f1f"), Vector3(0, 4.5, 0.1))
 		var lamps: Array = []
 		for i in 3:
 			lamps.append(LowPoly.box(pole, Vector3(0.24, 0.24, 0.06), Color.BLACK, Vector3(0, 4.85 - i * 0.34, -0.06)))
 		MeshMerger.merge(pole, lamps)   # performance: pole + housing in one mesh
-		# countdown seconds above the light (like the timers on real Bacolod intersections)
+		# countdown seconds above the light, readable ONLY by the lane it controls
+		# (no billboard, one-sided: other directions don't see a confusing second number)
 		var timer := Label3D.new()
 		timer.position = Vector3(0, 5.45, -0.05)
+		timer.rotation.y = PI           # text faces the drivers coming in (pole's -Z side)
+		timer.double_sided = false
 		timer.font_size = 64
 		timer.pixel_size = 0.008
 		timer.outline_size = 14
 		timer.outline_modulate = Color(0, 0, 0, 0.9)
-		timer.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		pole.add_child(timer)
+		# small sign under the light: you may turn right even on red (with care)
+		var sign := Label3D.new()
+		sign.position = Vector3(0, 3.6, -0.1)
+		sign.rotation.y = PI
+		sign.double_sided = false
+		sign.text = "RIGHT TURN
+ANYTIME"
+		sign.font_size = 28
+		sign.pixel_size = 0.006
+		sign.outline_size = 8
+		sign.modulate = Color("#f4f1de")
+		sign.outline_modulate = Color("#1d3557")
+		pole.add_child(sign)
 		heads.append({"from": from_id, "lamps": lamps, "timer": timer})
 	return {"node": node, "heads": heads}

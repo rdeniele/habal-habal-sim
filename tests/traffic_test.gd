@@ -167,16 +167,45 @@ func _run() -> void:
 		player.teleport(Vector3(0, 0.3, 0))
 		game.world.update_streaming(Vector3.ZERO, true)
 	if not police.enforcers.is_empty():
-		enforcer = police.enforcers.values()[0]
+		var light_id: int = police.enforcers.keys()[0]
+		enforcer = police.enforcers[light_id]
 		GameState.money = 500
 		police._cooldowns.clear()
-		police.violation("red_light", enforcer.global_position + Vector3(5, 0, 0))
-		print("  after ticket: money %d" % GameState.money)
-		_check(GameState.money == 500 - Economy.FINE_RED_LIGHT, "enforcer gives a ticket (red light)")
-		_check(GameState.money < 0, "wallet can go negative")
+		# a red light at a crossing WITHOUT this enforcer: nobody sees it
+		var other_light := -1
+		for id in traffic._light_nodes:
+			if not police.enforcers.has(id):
+				other_light = id
+				break
+		if other_light != -1:
+			police.violation("red_light", game.world.road_graph.get_point(other_light), other_light)
+			_check(police.pull_over.is_empty() and GameState.money == 500, "no enforcer at that light: no ticket")
+		# right turn on red is allowed; straight is not
+		_check(Police.is_right_turn(Vector3(0, 0, -1), Vector3(1, 0, 0)), "right turn detected (allowed on red)")
+		_check(not Police.is_right_turn(Vector3(0, 0, -1), Vector3(0, 0, -1)), "going straight is not a right turn")
+		_check(not Police.is_right_turn(Vector3(0, 0, -1), Vector3(-1, 0, 0)), "left turn is not a right turn")
+		# beat the red light at the enforcer's own crossing: he waves you over
+		police.violation("red_light", enforcer.global_position + Vector3(5, 0, 0), light_id)
+		_check(not police.pull_over.is_empty() and GameState.money == 500, "enforcer whistles: pull over (no fine yet)")
 		game._update_hud()
+		_check(game.hud._pull_over_label.visible, "HUD shows the pull-over countdown")
+		# pull over next to him -> ticket
+		player.teleport(enforcer.global_position + Vector3(3, 0.3, 0))
 		await _wait(0.3)
+		print("  after ticket: money %d" % GameState.money)
+		_check(GameState.money == 500 - Economy.FINE_RED_LIGHT, "pulled over: ticket paid (red light)")
+		_check(GameState.money < 0, "wallet can go negative")
 		_shot("traffic_04_ticket")
+		# second time: run away instead -> 1 star for evading
+		police._cooldowns.clear()
+		police.violation("red_light", enforcer.global_position + Vector3(5, 0, 0), light_id)
+		player.teleport(enforcer.global_position + Vector3(120, 0.3, 0))
+		await _wait(0.3)
+		_check(police.wanted == 1 and police.offenses.has(Police.REASONS["evading"]), "ran from the enforcer: wanted for evading")
+		game._update_hud()
+		_check(game.hud._wanted_panel.visible and game.hud._offense_label.text.contains("Evading"), "offenses listed under the stars")
+		police.clear_wanted()
+		_check(not game.hud._wanted_panel.visible, "stars gone after clearing")
 	else:
 		_check(false, "found a traffic enforcer")
 
@@ -335,6 +364,77 @@ func _run() -> void:
 		_check(combat.fighters.size() == 2 and combat.fighters[0].opponent != null, "people start a street fight")
 		combat.cancel()
 
+	# --- Bumping people is an offense (if someone sees it) -------------------------------
+	police.clear_wanted()
+	police._cooldowns.clear()
+	var witness: Pedestrian = null
+	for p in game.pedestrians.people:
+		if is_instance_valid(p):
+			witness = p
+			break
+	if witness != null and not police.enforcers.is_empty():
+		var en: Node3D = police.enforcers.values()[0]
+		police.violation("bump", en.global_position + Vector3(4, 0, 0))
+		_check(police.wanted == 1 and police.offenses.has(Police.REASONS["bump"]), "bumping a pedestrian near an enforcer = 1 star")
+		police.clear_wanted()
+
+	# --- Pedestrians walk smoothly (no teleporting at corners) ----------------------------
+	var max_step := 0.0
+	var tracked: Array = game.pedestrians.people.filter(func(p: Pedestrian) -> bool: return is_instance_valid(p) and p.knocked <= 0.0)
+	var last := {}
+	for p in tracked:
+		p.set_physics_process(true)
+		last[p] = p.global_position
+	for frame in 240:
+		await get_tree().physics_frame
+		for p in tracked:
+			if is_instance_valid(p) and last.has(p):
+				max_step = maxf(max_step, (p.global_position - last[p]).length())
+				last[p] = p.global_position
+	print("  biggest pedestrian step in one frame: %.2f m (%d people, 4 s)" % [max_step, tracked.size()])
+	_check(max_step < 0.3, "pedestrians never teleport")
+
+	# --- Map pin: click the full map, GPS goes there, arrive ---------------------------------
+	game.respawn_at_home()
+	await _wait(0.3)
+	var lms: Array = game.hud.full_map.get_landmarks()
+	if not lms.is_empty():
+		var lm: Dictionary = lms[0]
+		game._on_map_clicked(Vector3(float(lm["x"]) + 3.0, 0, float(lm["z"])), MOUSE_BUTTON_LEFT)
+		_check(not game._pin.is_empty() and str(game._pin["label"]).contains(str(lm["name"])), "pin snaps to a landmark: %s" % lm["name"])
+		_check(game._gps_target().get("label", "") == game._pin["label"], "GPS goes to the pin")
+		player.teleport(game._pin["pos"] + Vector3(0, 0.3, 0))
+		game._update_gps()
+		_check(game._pin.is_empty(), "arrived: pin cleared")
+		game._on_map_clicked(player.global_position + Vector3(150, 0, 40), MOUSE_BUTTON_LEFT)
+		_check(not game._pin.is_empty(), "pin anywhere on the map")
+		game._on_map_clicked(Vector3.ZERO, MOUSE_BUTTON_RIGHT)
+		_check(game._pin.is_empty(), "right click removes the pin")
+
+	# --- Off duty: GPS shows HOME ----------------------------------------------------------------
+	player.teleport(player.global_position + Vector3(200, 0.3, 0))
+	game.booking.stage = BookingSystem.Stage.OFFLINE
+	var tgt: Dictionary = game._gps_target()
+	_check(tgt.get("label", "") == "HOME", "not working: GPS shows HOME")
+
+	# --- Full map opens fast ------------------------------------------------------------------------
+	var t0 := Time.get_ticks_usec()
+	game.hud.toggle_full_map()
+	game.hud.full_map._pack_full_map()
+	var map_ms := (Time.get_ticks_usec() - t0) / 1000.0
+	print("  full map packing: %.1f ms (%d road lines)" % [map_ms, (game.hud.full_map._minor.size() + game.hud.full_map._major.size()) / 2])
+	_check(game.hud.is_menu_open(), "full map frees the mouse (for pins)")
+	game.hud.toggle_full_map()
+
+	# --- First person fists -----------------------------------------------------------------------
+	game.respawn_at_home()
+	await _wait(0.3)
+	game.cam.set_view(3)
+	game._hands.update_pose(true, false, 0.5, true, false, 0.016)
+	_check(game._hands.visible, "first person: fists show when punching")
+	game._hands.update_pose(true, false, -1.0, true, false, 3.0)
+	_check(not game._hands.visible, "fists fade away after fighting")
+
 	print("TRAFFIC TEST DONE: %s" % ("ALL PASSED" if _fails.is_empty() else "FAILED: %s" % ", ".join(_fails)))
 	get_tree().quit(0 if _fails.is_empty() else 1)
 
@@ -369,4 +469,6 @@ func _check(ok: bool, what: String) -> void:
 
 
 func _shot(n: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return   # no screen to capture when running without a window
 	get_viewport().get_texture().get_image().save_png("user://screenshots/%s.png" % n)

@@ -35,6 +35,11 @@ const EXPECTED_SPEED := 7.0       # m/s used to judge if a trip was "late" (~25 
 const HARD_BRAKE_DECEL := 8.5     # m/s^2 counts as a hard brake
 const HARD_BRAKE_PENALTY := 30.0  # comfort per second of hard braking
 const SCARY_SPEED_KMH := 70.0
+## How fast each kind of passenger is happy to go (km/h). Late students and nurses on
+## an emergency want you to hurry; Lola wants you to take it slow. No speed limit fines:
+## speed is between you and your passenger.
+const COMFY_SPEED := {"student": 85.0, "office": 80.0, "nurse": 85.0, "call_center": 80.0, "teen": 90.0,
+	"worker": 75.0, "seaman": 75.0, "tourist": 60.0, "vendor": 55.0, "tita": 50.0, "lola": 40.0}
 const SCARY_SPEED_PENALTY := 4.0  # comfort per second above scary speed
 const BUMP_PENALTY := 3.0         # comfort per m/s of impact
 
@@ -120,6 +125,11 @@ func get_target() -> Dictionary:
 		Stage.TO_DROPOFF:
 			return {"pos": _request["dropoff"]["pos"], "color": DROPOFF_COLOR}
 	return {}
+
+
+## Online and taking bookings (not offline, not on a break).
+func is_working() -> bool:
+	return stage != Stage.OFFLINE and stage != Stage.BREAK
 
 
 func is_busy() -> bool:
@@ -439,7 +449,8 @@ func _track_comfort(delta: float) -> void:
 	var before := _comfort
 	if motor.last_accel < -HARD_BRAKE_DECEL:
 		_comfort -= HARD_BRAKE_PENALTY * delta
-	if motor.get_speed_kmh() > SCARY_SPEED_KMH:
+	var comfy: float = COMFY_SPEED.get((_request["personality"] as Dictionary).get("id", ""), SCARY_SPEED_KMH)
+	if motor.get_speed_kmh() > comfy:
 		_comfort -= SCARY_SPEED_PENALTY * delta
 	_comfort = maxf(0.0, _comfort)
 	if _comfort < before and _comfort < 80.0:

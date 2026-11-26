@@ -185,6 +185,13 @@ func _nearest_segment(p: Vector3) -> Dictionary:
 	return best
 
 
+## The closest spot on any road to `p` (e.g. where a map pin should go).
+func nearest_road_point(p: Vector3) -> Vector3:
+	if segments.is_empty():
+		return Vector3(p.x, 0, p.z)
+	return _project(p, _nearest_segment(p))
+
+
 ## Closest point on a road segment to `p` (on the ground).
 func _project(p: Vector3, seg: Dictionary) -> Vector3:
 	var a := _points[int(seg["a"])]

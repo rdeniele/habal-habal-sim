@@ -1,7 +1,9 @@
 class_name Pedestrian
 extends AnimatableBody3D
 ## Someone walking on the sidewalk. Follows the road graph on one side of the street and
-## crosses the road at the end of a block. Hit them and they fall, get up and shout.
+## sometimes crosses the road at the end of a block. Hit them and they fall, get up and shout.
+## Smooth walking: the graph says where they SHOULD be (on the sidewalk); if that spot jumps
+## (a corner, or the other side of the street) they walk over to it instead of teleporting.
 
 const WALK_SPEED := 1.3
 const SHOUTS := ["Hoy! Bulag ka?! (Hey! Are you blind?!)", "Aray ko! (Ouch!)",
@@ -18,6 +20,8 @@ var knocked := 0.0            # > 0 while lying on the ground
 var _phase := 0.0
 var _bubble: Label3D
 var _bubble_time := 0.0
+var _pos := Vector3.ZERO      # where they really are (walks toward the sidewalk spot)
+var _placed := false
 
 
 func setup(p_graph: RoadGraph, rng: RandomNumberGenerator, a: int, b: int) -> void:
@@ -69,25 +73,46 @@ func _physics_process(delta: float) -> void:
 			model.rotation.x = 0.0
 			model.position.y = 0.0
 		return
-	progress += WALK_SPEED * delta
-	if progress >= seg_len:
-		progress -= seg_len
-		var nb := graph.neighbors(to_id)
-		var nxt := from_id
-		if nb.size() > 1:
-			nxt = nb[randi() % nb.size()]
-			if nxt == from_id:
-				nxt = nb[(Array(nb).find(nxt) + 1) % nb.size()]
-		_start(to_id, nxt)
+	var want := _sidewalk_spot()
+	if not _placed:
+		_pos = want
+		_placed = true
+	var gap := Vector2(want.x - _pos.x, want.z - _pos.z)
+	var walk_dir: Vector3
+	if gap.length() > 0.6:
+		# not on our sidewalk spot (turned a corner / crossing the street): walk there first
+		walk_dir = Vector3(gap.x, 0, gap.y).normalized()
+		_pos += walk_dir * minf(WALK_SPEED * 1.15 * delta, gap.length())
+	else:
+		progress += WALK_SPEED * delta
+		if progress >= seg_len:
+			progress -= seg_len
+			var nb := graph.neighbors(to_id)
+			var nxt := from_id
+			if nb.size() > 1:
+				nxt = nb[randi() % nb.size()]
+				if nxt == from_id:
+					nxt = nb[(Array(nb).find(nxt) + 1) % nb.size()]
+			_start(to_id, nxt)
+			if randf() < 0.2:
+				side = -side   # cross the street at the corner (walks across, cars stop for them)
+		want = _sidewalk_spot()
+		walk_dir = (graph.get_point(to_id) - graph.get_point(from_id)) / seg_len
+		_pos = want
+	global_transform = Transform3D(Basis(Vector3.UP, atan2(-walk_dir.x, -walk_dir.z)), Vector3(_pos.x, 0, _pos.z))
+	_phase += delta * WALK_SPEED * 2.6
+	model.walk(_phase, 0.5)
+
+
+## Where on the sidewalk we should be right now, from the road graph.
+func _sidewalk_spot() -> Vector3:
 	var a := graph.get_point(from_id)
 	var b := graph.get_point(to_id)
 	var dir := (b - a) / seg_len
 	var right := Vector3(-dir.z, 0, dir.x)
 	var off := graph.road_width(from_id, to_id) * 0.5 + 1.6
 	var pos := a + dir * progress + right * off * side
-	global_transform = Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.z)), Vector3(pos.x, 0, pos.z))
-	_phase += delta * WALK_SPEED * 2.6
-	model.walk(_phase, 0.5)
+	return Vector3(pos.x, 0, pos.z)
 
 
 ## Hit by the motor.

@@ -1,11 +1,14 @@
 class_name Police
 extends Node3D
-## Traffic enforcers standing at some busy intersections. If one SEES you break a rule
-## (within ~70 m) they blow the whistle and you get a ticket - the fine comes straight out
-## of your wallet, which can go negative (you'll have to work it back up).
+## Traffic enforcers standing at some busy intersections (every 3rd traffic light).
+## Most lights have NO enforcer: you only get in trouble if the enforcer at THAT crossing
+## sees you beat the red light (right turns on red are allowed, like "right turn anytime").
+## No speeding tickets: how fast you ride is between you and your passenger.
 ##
-## Violations:  running a red light, speeding (> limit + tolerance, near an enforcer),
-##              hitting a pedestrian (reckless driving), fighting in public.
+## When an enforcer catches you he blows the whistle and waves you over. Your choice:
+##   - pull over next to him (stop within a few meters) -> pay the ticket
+##   - ride away                                        -> "evading" = 1 WANTED star
+## The fine comes straight out of your wallet, which can go negative (work it back up).
 ## Amounts: config/economy.gd (based on LTO JAO 2014-01 / RA 4136).
 ##
 ## Serious stuff (hitting a pedestrian, fighting in public) gives you a WANTED level (stars)
@@ -16,15 +19,21 @@ signal ticketed(reason: String, fine: int)
 signal busted(stars: int)
 signal wanted_changed(stars: int)
 
-const SIGHT := 70.0
+const SIGHT := 70.0             # enforcers/police see serious stuff (hitting people, fights) this far
+const LIGHT_SIGHT := 40.0       # an enforcer only notices a red light at his own crossing
+const PULL_OVER_TIME := 12.0    # seconds to stop next to the enforcer before it counts as evading
+const PULL_OVER_DIST := 12.0
+const EVADE_DIST := 75.0
+const WITNESS_DIST := 25.0      # people on the street who see you hit someone may call the police
 const ENFORCER_RADIUS := 230.0
 const SPEED_WATCH := 45.0
 const COOLDOWN := 20.0          # same violation can't be ticketed again for this long
 const REASONS := {
 	"red_light": "Disregarding traffic signal (beating the red light)",
-	"speeding": "Over the speed limit",
 	"reckless": "Reckless driving (hit a pedestrian)",
+	"bump": "Bumped a pedestrian",
 	"fighting": "Fighting in public / alarms and scandals",
+	"evading": "Evading a traffic enforcer",
 }
 
 var world: GameWorld
@@ -44,6 +53,9 @@ var _inside_signal := -1        # the traffic light intersection we're currently
 var _sfx: AudioStreamPlayer
 var _rng := RandomNumberGenerator.new()
 var _t := 0.0
+var offenses: Array[String] = []   # what you're wanted for (shown under the stars)
+var pull_over := {}                 # enforcer waiting for you to stop: {"enforcer", "reason", "time"}
+var _red_entry := {}                # entered a crossing on red: decide when we leave (right turn = ok)
 
 
 func setup(p_world: GameWorld, p_player: Player, p_motor: Motorcycle, p_hud: HUD, p_traffic: Traffic) -> void:
@@ -71,7 +83,7 @@ func _physics_process(delta: float) -> void:
 	_animate_enforcers()
 	if player.state == Player.State.RIDING:
 		_check_red_light()
-		_check_speeding()
+	_update_pull_over(delta)
 	_update_chase(delta)
 
 
@@ -122,7 +134,8 @@ func _animate_enforcers() -> void:
 		m.arm_r.rotation = Vector3(0, 0, 1.4 + sin(_t * 3.0 + id) * 0.5)
 
 
-## Did we just enter a traffic-light intersection while our light was red?
+## Red lights: when we ENTER a crossing on red we remember how we came in; when we LEAVE
+## it we check where we went. Turning right on red is fine; straight or left = violation.
 func _check_red_light() -> void:
 	var here := motor.global_position
 	var current := -1
@@ -131,26 +144,33 @@ func _check_red_light() -> void:
 			current = id
 			break
 	if current != -1 and current != _inside_signal and absf(motor.speed) > 2.0:
-		# which road did we come in on? the neighbor behind us
-		var g := world.road_graph
-		var fwd := motor.get_forward()
-		var best := -1
-		var best_dot := -2.0
-		for n in g.neighbors(current):
-			var dot := (g.get_point(current) - g.get_point(n)).normalized().dot(fwd)
-			if dot > best_dot:
-				best_dot = dot
-				best = n
-		if best != -1 and traffic.light_state(current, best) == 2:
-			violation("red_light", here)
+		var from := _approach(current, motor.get_forward())
+		if from != -1 and traffic.light_state(current, from) == 2:
+			_red_entry = {"id": current, "fwd": motor.get_forward(), "pos": here}
+	if current == -1 and _inside_signal != -1 and not _red_entry.is_empty():
+		if not is_right_turn(_red_entry["fwd"], motor.get_forward()):
+			violation("red_light", _red_entry["pos"], int(_red_entry["id"]))
+		_red_entry = {}
 	_inside_signal = current
 
 
-func _check_speeding() -> void:
-	if motor.get_speed_kmh() < Economy.SPEED_LIMIT_KMH + Economy.SPEED_TOLERANCE_KMH:
-		return
-	if _nearest_enforcer(motor.global_position, SPEED_WATCH) != null:
-		violation("speeding", motor.global_position)
+## Which road did we come in on? The neighbor behind us.
+func _approach(id: int, fwd: Vector3) -> int:
+	var g := world.road_graph
+	var best := -1
+	var best_dot := -2.0
+	for n in g.neighbors(id):
+		var dot := (g.get_point(id) - g.get_point(n)).normalized().dot(fwd)
+		if dot > best_dot:
+			best_dot = dot
+			best = n
+	return best
+
+
+## Right turn = we now face roughly 90 degrees clockwise (seen from above) from how we came in.
+static func is_right_turn(f_in: Vector3, f_out: Vector3) -> bool:
+	var cross_y := f_in.z * f_out.x - f_in.x * f_out.z
+	return cross_y < -0.5 and f_in.dot(f_out) < 0.6
 
 
 func _nearest_enforcer(pos: Vector3, radius: float) -> Node3D:
@@ -166,31 +186,93 @@ func _nearest_enforcer(pos: Vector3, radius: float) -> Node3D:
 
 
 ## A rule was broken at `pos`. If an enforcer (or police) saw it: ticket, or wanted stars.
-func violation(reason: String, pos: Vector3) -> void:
+## `at_signal` = the traffic light crossing (red lights: only that crossing's enforcer counts).
+func violation(reason: String, pos: Vector3, at_signal: int = -1) -> void:
 	if float(_cooldowns.get(reason, 0.0)) > 0.0:
 		return
-	var e := _nearest_enforcer(pos, SIGHT)
+	var e: Node3D = null
+	if reason == "red_light":
+		if enforcers.has(at_signal) and (enforcers[at_signal] as Node3D).global_position.distance_to(pos) < LIGHT_SIGHT:
+			e = enforcers[at_signal]
+	else:
+		e = _nearest_enforcer(pos, SIGHT)
 	var police_saw := _nearest_unit(pos, 60.0) != null
-	if e == null and not police_saw:
-		return   # nobody saw it...
-	if reason == "reckless" or reason == "fighting":
+	if reason == "reckless" or reason == "bump" or reason == "fighting":
+		var stars: int = {"reckless": 2, "bump": 1, "fighting": 1}[reason]
+		if e == null and not police_saw:
+			# no enforcer around... but people on the street saw it and may call the police
+			if reason == "fighting" or not _witnessed(pos) or _rng.randf() > (0.6 if reason == "reckless" else 0.3):
+				return
+			stars = 1
+			hud.show_toast("May nakakita! Someone saw that and called the police!", 3.0)
 		_cooldowns[reason] = 6.0
 		_whistle()
-		add_wanted(2 if reason == "reckless" else 1, reason)
+		add_wanted(stars, reason)
 		return
-	if e == null:
+	if e == null or not pull_over.is_empty():
 		return
 	_cooldowns[reason] = COOLDOWN
+	_whistle()
+	e.look_at(Vector3(pos.x, e.global_position.y, pos.z), Vector3.UP)
+	pull_over = {"enforcer": e, "reason": reason, "time": PULL_OVER_TIME}
+	hud.show_toast("PRRT! An enforcer saw you %s!\nPull over next to him to take the ticket (%s)... or run for it!" % [
+		"beat the red light" if reason == "red_light" else str(REASONS[reason]).to_lower(), Economy.format_peso(_fine_for(reason))], 4.5)
+
+
+## Waiting for you to pull over: stop near the enforcer = ticket; ride off = evading (1 star).
+func _update_pull_over(delta: float) -> void:
+	if pull_over.is_empty():
+		return
+	var e: Node3D = pull_over["enforcer"]
+	if not is_instance_valid(e):
+		pull_over = {}
+		return
+	pull_over["time"] = float(pull_over["time"]) - delta
+	var me := traffic.player_pos()
+	var d := e.global_position.distance_to(me)
+	if d > 0.5:
+		e.look_at(Vector3(me.x, e.global_position.y, me.z), Vector3.UP)
+	var my_speed := absf(motor.speed) if player.state == Player.State.RIDING else 0.0
+	if d < PULL_OVER_DIST and my_speed < 1.5:
+		_give_ticket(pull_over["reason"])
+		pull_over = {}
+	elif d > EVADE_DIST or float(pull_over["time"]) <= 0.0:
+		pull_over = {}
+		_whistle()
+		add_wanted(1, "evading")
+
+
+func _give_ticket(reason: String) -> void:
 	var fine := _fine_for(reason)
 	GameState.add_money(-fine)   # can go below zero: that's debt you work off
 	GameState.today["fines"] = int(GameState.today.get("fines", 0)) + fine
 	GameState.tickets += 1
-	_whistle()
-	var holder := e
-	holder.look_at(Vector3(pos.x, holder.global_position.y, pos.z), Vector3.UP)
-	hud.show_toast("PRRT! TICKET from a traffic enforcer\n%s: -%s%s" % [REASONS[reason], Economy.format_peso(fine),
+	hud.show_toast("TICKET: %s  -%s\nSalamat sa kooperasyon! (Thanks for cooperating)%s" % [REASONS[reason], Economy.format_peso(fine),
 		"\nYour wallet is negative: keep working to pay it off!" if GameState.money < 0 else ""], 4.5)
 	ticketed.emit(reason, fine)
+
+
+## Seconds left to pull over (0 = no enforcer waiting). For the HUD.
+func pull_over_time() -> float:
+	return float(pull_over.get("time", 0.0))
+
+
+## Was anyone walking nearby to see it?
+func _witnessed(pos: Vector3) -> bool:
+	if traffic.pedestrians == null:
+		return false
+	for p in traffic.pedestrians.people:
+		if is_instance_valid(p) and p.global_position.distance_to(pos) < WITNESS_DIST and p.knocked <= 0.0:
+			return true
+	return false
+
+
+## Enforcer positions for the minimap.
+func enforcer_positions() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for id: int in enforcers:
+		out.append((enforcers[id] as Node3D).global_position)
+	return out
 
 
 func _whistle() -> void:
@@ -204,15 +286,21 @@ func add_wanted(stars: int, reason: String) -> void:
 	var before := wanted
 	wanted = mini(3, maxi(wanted + 1, stars) if wanted > 0 else stars)
 	_unseen = 0.0
+	var text: String = REASONS.get(reason, reason)
+	if not offenses.has(text):
+		offenses.append(text)
 	if wanted != before:
 		wanted_changed.emit(wanted)
 		hud.show_toast("WANTED %s  -  %s!
 Police are coming. Lose them, or you'll be jailed." % [
-			"★".repeat(wanted), REASONS.get(reason, reason)], 4.0)
+			"★".repeat(wanted), text], 4.0)
+	else:
+		wanted_changed.emit(wanted)   # same stars, maybe a new offense: refresh the list
 
 
 func clear_wanted() -> void:
 	wanted = 0
+	offenses.clear()
 	_unseen = 0.0
 	_catch = 0.0
 	for u in units:
@@ -289,10 +377,11 @@ func _fine_for(reason: String) -> int:
 	match reason:
 		"red_light":
 			return Economy.FINE_RED_LIGHT
-		"speeding":
-			return Economy.FINE_SPEEDING
 		"fighting":
 			return Economy.FINE_FIGHTING
+		"bump":
+			var bump_fines: Array = Economy.FINE_RECKLESS
+			return bump_fines[0]
 		"reckless":
 			var fines: Array = Economy.FINE_RECKLESS
 			var f: int = fines[mini(GameState.reckless_count, fines.size() - 1)]

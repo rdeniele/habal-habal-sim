@@ -29,6 +29,7 @@ var sfx_volume := 0.8
 # Controls
 var mouse_sensitivity := DEFAULT_MOUSE
 var invert_y := false
+var camera_view := 3          # 0 normal, 1 far, 2 close, 3 first person (default)
 # Gameplay
 var passenger_language := "mixed"
 var day_length := "normal"
@@ -115,6 +116,7 @@ func save() -> void:
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("controls", "mouse_sensitivity", mouse_sensitivity)
 	cfg.set_value("controls", "invert_y", invert_y)
+	cfg.set_value("controls", "camera_view", camera_view)
 	cfg.set_value("gameplay", "passenger_language", passenger_language)
 	cfg.set_value("gameplay", "day_length", day_length)
 	var err := cfg.save(PATH)
@@ -136,6 +138,7 @@ func load_settings() -> void:
 	sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 	mouse_sensitivity = cfg.get_value("controls", "mouse_sensitivity", mouse_sensitivity)
 	invert_y = cfg.get_value("controls", "invert_y", invert_y)
+	camera_view = cfg.get_value("controls", "camera_view", camera_view)
 	passenger_language = cfg.get_value("gameplay", "passenger_language", passenger_language)
 	day_length = cfg.get_value("gameplay", "day_length", day_length)
 	if not DAY_LENGTHS.has(day_length):

@@ -47,7 +47,8 @@ Then every day:
 4. Follow the **GPS**: the blue route on the minimap (bottom-left), the arrow at the top, and the green beam.
    The minimap always shows **H = home**, G = gas, M = motor shop, + = clinic, S = driving school,
    orange dots = sari-sari stores. Press **M** for the full city map. Stop next to the passenger.
-5. They hop on. Ride smoothly to the orange beam: hard braking, bumps and speeding make them uncomfortable.
+5. They hop on. Ride smoothly to the orange beam: hard braking and bumps make them uncomfortable.
+   Speed is up to you: a late student or a nurse wants you to hurry, Lola wants you to take it slow.
 6. Stop at the drop-off: you get paid and rated (1-5 stars). Good ratings = more bookings.
 7. Visit the **Motor Shop** (E at its door) anytime to buy/rent another motor, repair damage, or sell yours.
 8. Ready to stop? Tap **LAST RIDE** in the app: your next booking drops off near home.
@@ -61,7 +62,8 @@ Then every day:
    Let a meter hit zero and you faint and wake up at the clinic (₱500).
 10. **Traffic is real**: cars, jeepneys, tricycles and motorbikes drive on the right, stop at red lights
     and honk if you block them. People walk the sidewalks and cross the streets: don't hit them!
-    Every traffic light has a **countdown timer**, and the speedometer shows "LIGHT AHEAD: RED 12s".
+    Every traffic light stands on the **far corner** of the crossing, facing you, with a **countdown timer**
+    only your lane can see; the speedometer shows "LIGHT AHEAD: RED 12s". **Right turn anytime** is allowed.
     Some drivers are careless: cars can **crash** into each other (or into you), and the drivers may
     get out and fight each other. People on the street sometimes start fights too.
 11. **Open-world fighting**: on foot, left click punches anyone (combos), right click blocks, L dodges.
@@ -71,21 +73,28 @@ Then every day:
     decide: ride away or get off and fight. People who see a fight join in or run.
     Knock someone down = +1 Respect. Get knocked out = clinic (₱500).
     A passenger on board gets scared and cancels if a fight starts.
-12. **Traffic enforcers** at busy intersections give **tickets** (real LTO amounts) for red lights and speeding.
-    Your wallet can go **negative (red)**: keep working to get back out.
-    Hitting a pedestrian or fighting where enforcers/police can see = **WANTED ★**: police motorbikes chase you.
+12. **Traffic enforcers** stand at some intersections (yellow-green dots on the minimap). Only the enforcer
+    at THAT crossing can catch you beating the red light. He blows his whistle and waves you over:
+    **pull over** next to him and pay the ticket (real LTO amounts), or **run for it** and get 1 wanted star.
+    No speeding tickets. Your wallet can go **negative (red)**: keep working to get back out.
+    Hitting or even bumping a pedestrian, or fighting, where enforcers/police (or people on the street) see it
+    = **WANTED ★**: police motorbikes chase you. Your stars and offenses show at the top middle of the screen.
     Lose them (stay out of sight) or get **BUSTED**: 2 days in jail per star, ₱5,000 bail per star, no income.
-13. Press **C** to cycle cameras, including **first person**: on the motor the mouse turns your head and the
-    **side mirrors** show the traffic behind you.
-14. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
-15. **Sounds & music**: a putt-putt scooter engine, horns for every vehicle type, crashes, punches, the
+13. The game starts in **first person** (press **C** to change; it remembers your choice). On the motor the
+    mouse turns your head and the **side mirrors** show the traffic behind you. On foot, your **fists** show
+    when you punch or block.
+14. **Explore**: open the full map (**M**), **left click** to drop a **pin** (click near SM City, Ayala,
+    the Cathedral, the Plaza, the Capitol or the Lagoon to pick it), and the GPS takes you there.
+    Right click removes the pin. When you're not working (offline or on a break), the GPS shows the way HOME.
+15. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
+16. **Sounds & music**: a putt-putt scooter engine, horns for every vehicle type, crashes, punches, the
     enforcer's whistle, city noise, and a laid-back guitar tune that plays like a radio while you ride.
     All made in code (no sound files). Volumes in **Settings** (Music / Sound effects).
-16. Passengers have several lines for every moment (getting on, chatting, thanks, complaints), so rides
+17. Passengers have several lines for every moment (getting on, chatting, thanks, complaints), so rides
     don't repeat. All in Hiligaynon, Bisaya, Tagalog and English.
-17. **Graphics → Low** is made for weak laptops: no shadows, and the 3D world is drawn at a lower
+18. **Graphics → Low** is made for weak laptops: no shadows, and the 3D world is drawn at a lower
     resolution and sharpened back up (FSR). **High** adds soft corner shadows (SSAO). Night lights glow.
-18. **Controller**: plug in an Xbox-style gamepad. Menus work too: press any button to highlight one,
+19. **Controller**: plug in an Xbox-style gamepad. Menus work too: press any button to highlight one,
     D-pad to move, A to press.
 
 ## Controls
@@ -102,7 +111,7 @@ Then every day:
 | Interact / refuel at pump | E | A |
 | Sakay phone | Tab | Back |
 | Accept / decline booking | 1 / 2 | D-pad up / down |
-| Full map | M | LB |
+| Full map (left click: pin, right click: remove pin) | M | LB |
 | Fight: punch / block / dodge | J or left mouse / K or right mouse (hold) / L | X / B / RB |
 | Change camera | C | R3 |
 | Controls help | F1 | |
@@ -153,7 +162,8 @@ python tools/osm_convert.py
 ## Automated tests
 
 Godot can run the game by itself and check that things work (it also saves screenshots to
-`%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\screenshots`):
+`%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\screenshots`). Add `--headless` to run a test
+without opening a window (no screenshots then), e.g. while you're using the PC for something else:
 
 ```powershell
 godot --path . res://tests/smoke_test.tscn

@@ -141,4 +141,6 @@ func _shot_once(shot_name: String) -> void:
 	if _shots.has(shot_name):
 		return
 	_shots[shot_name] = true
+	if DisplayServer.get_name() == "headless":
+		return   # no screen to capture when running without a window
 	get_viewport().get_texture().get_image().save_png("user://screenshots/%s.png" % shot_name)

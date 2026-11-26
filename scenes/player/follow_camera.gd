@@ -5,7 +5,7 @@ extends Node3D
 ## so the camera never goes inside buildings.
 ## On the motor, the camera swings behind you automatically when you stop moving the mouse.
 ##
-## First person (press C until you get there): the camera sits at your eyes.
+## First person (the default; C cycles views, and the game remembers your choice): the camera sits at your eyes.
 ## On the motor, the mouse turns/tilts your HEAD (look over your shoulder, check the
 ## side mirrors); it slowly turns back to the front while you ride.
 
@@ -55,6 +55,7 @@ func _ready() -> void:
 	_arm.spring_length = _length
 	_pitch_pivot.add_child(_arm)
 
+	_preset = clampi(Settings.camera_view, 0, PRESETS.size() - 1)
 	camera = Camera3D.new()
 	camera.fov = 70.0
 	camera.far = 2500.0
@@ -71,7 +72,7 @@ func set_target(node: Node3D, follow: bool) -> void:
 func snap_to(yaw: float) -> void:
 	_yaw = yaw
 	if target != null:
-		global_position = target.global_position + Vector3.UP * float(PRESETS[_preset]["height"])
+		global_position = target.global_position + Vector3.UP * float((PRESETS[_preset] as Dictionary).get("height", 1.62))
 	rotation = Vector3(0, _yaw, 0)
 	reset_physics_interpolation()
 
@@ -104,7 +105,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_pitch = clampf(_pitch - motion.relative.y * Settings.mouse_sensitivity * y_sign, PITCH_MIN, PITCH_MAX)
 		_idle_look_time = 0.0
 	elif event.is_action_pressed("camera_change"):
-		_preset = (_preset + 1) % PRESETS.size()
+		set_view((_preset + 1) % PRESETS.size())
+
+
+## Switch camera view (0 normal, 1 far, 2 close, 3 first person) and remember it.
+func set_view(index: int) -> void:
+	_preset = clampi(index, 0, PRESETS.size() - 1)
+	if Settings.camera_view != _preset:
+		Settings.camera_view = _preset
+		Settings.save()
 
 
 func _physics_process(delta: float) -> void:

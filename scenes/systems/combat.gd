@@ -177,6 +177,12 @@ func _update_punch(delta: float) -> void:
 		_punch_t = -1.0
 
 
+## For the first-person fists: {"punch_t": 0..1 or -1, "right": bool, "blocking": bool}.
+func player_pose() -> Dictionary:
+	return {"punch_t": _punch_t, "right": _punch_right,
+		"blocking": Input.is_action_pressed("block") and _punch_t < 0.0 and player_on_foot() and not hud.is_menu_open()}
+
+
 func _pose_player(delta: float) -> void:
 	var pm := player.get_model()
 	var blocking := Input.is_action_pressed("block") and _punch_t < 0.0

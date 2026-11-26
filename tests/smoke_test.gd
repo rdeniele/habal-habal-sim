@@ -71,6 +71,8 @@ func _next() -> void:
 
 
 func _shot(name: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return   # no screen to capture when running without a window
 	var img := get_viewport().get_texture().get_image()
 	var path := "%s/%s.png" % [_shots_dir, name]
 	img.save_png(path)

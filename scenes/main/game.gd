@@ -39,6 +39,8 @@ var combat: Combat
 var police: Police
 var _gps_route := PackedVector3Array()
 var _gps_timer := 0.0
+var _hands: FpHands                # your fists in first person
+var _pin := {}                    # map pin: {"pos": Vector3, "label": String} (GPS takes you there)
 var _gps_goal := ""               # "" / "home" / "shop": where the day-end GPS points
 var _stream_timer := 0.0
 var _bounds_timer := 0.0
@@ -101,12 +103,17 @@ func _ready() -> void:
 	police = Police.new()
 	add_child(police)
 	police.setup(world, player, motor, hud, traffic)
-	police.wanted_changed.connect(hud.set_wanted)
+	police.wanted_changed.connect(func(stars: int) -> void: hud.set_wanted(stars, police.offenses))
 	police.busted.connect(_on_busted)
 	combat.assault.connect(func(where: Vector3) -> void: police.violation("fighting", where))
 	combat.fight_lost.connect(func() -> void:
 		_send_to_clinic("Natalo ka!\n(You lost the fight)", "You lost the fight and woke up at the clinic."))
 	hud.set_map_world(world)
+	hud.full_map.clicked.connect(_on_map_clicked)
+	_hands = FpHands.new()
+	cam.camera.add_child(_hands)
+	var look := player.get_model().get_look()
+	_hands.build(look.get("skin", Color("#b97d4f")), look.get("top_color", Color("#2a9d8f")))
 	_sfx = AudioStreamPlayer.new()
 	_sfx.bus = "SFX"
 	add_child(_sfx)
@@ -714,7 +721,8 @@ func _on_motor_hit_vehicle(v: Node) -> void:
 func _on_hit_person(person: Node, impact: float) -> void:
 	(person as Pedestrian).knock(impact)
 	booking.on_hit_person()
-	police.violation("reckless", person.global_position)
+	# a slow bump is still an offense; a real hit is reckless driving
+	police.violation("reckless" if impact >= 4.0 else "bump", person.global_position)
 
 
 ## Fainted or lost a fight: wake up at the nearest clinic, pay the fee, lose 2 hours.
@@ -798,14 +806,58 @@ func _gps_target() -> Dictionary:
 		return {"pos": story._target, "color": story._target_color, "label": story._target_text}
 	if _gps_goal == "shop" and GameState.rental_out:
 		return {"pos": world.get_place("motor_shop")["door"], "color": Color("#8338ec"), "label": "MOTOR SHOP (return)"}
+	if not _pin.is_empty():
+		return {"pos": _pin["pos"], "color": Minimap.PIN_COLOR, "label": str(_pin["label"])}
+	var home: Vector3 = world.get_place("home")["door"]
 	if _gps_goal != "" or (GameState.story_done and GameState.hour_of_day() >= 22.0):
-		return {"pos": world.get_place("home")["door"], "color": Color("#ffd166"), "label": "HOME"}
+		return {"pos": home, "color": Color("#ffd166"), "label": "HOME"}
+	# Not working (offline or on a break) and away from home: the GPS shows the way home.
+	if GameState.story_done and not booking.is_working() and _flat_dist(_player_pos(), home) > 40.0:
+		return {"pos": home, "color": Color("#ffd166"), "label": "HOME"}
 	return {}
+
+
+func _player_pos() -> Vector3:
+	return motor.global_position if player.state == Player.State.RIDING else player.global_position
+
+
+## Full map click: left = drop a pin (snaps to a landmark or the nearest road), right = remove it.
+func _on_map_clicked(pos: Vector3, button: int) -> void:
+	if button == MOUSE_BUTTON_RIGHT:
+		if not _pin.is_empty():
+			_pin = {}
+			hud.set_map_pin(false, Vector3.ZERO)
+			hud.show_toast("Pin removed.", 1.5)
+		return
+	var label := ""
+	var snap_r := hud.full_map.meters_per_pixel() * 14.0   # clicked within ~14 px of a landmark?
+	for lm: Dictionary in hud.full_map.get_landmarks():
+		var lp := Vector3(float(lm["x"]), 0, float(lm["z"]))
+		if _flat_dist(lp, pos) < snap_r:
+			pos = lp
+			label = str(lm.get("name", "Pin"))
+			break
+	for place in world.places:
+		if label == "" and place.get("type", "") == "home" and _flat_dist(place["door"], pos) < snap_r:
+			pos = place["door"]
+			label = "HOME"
+	var spot := world.road_graph.nearest_road_point(pos)
+	_pin = {"pos": spot, "label": ("PIN: " + label) if label != "" and label != "HOME" else ("HOME" if label == "HOME" else "PIN")}
+	_gps_timer = 0.0
+	hud.set_map_pin(true, spot)
+	hud.show_toast("Pinned: %s\nFollow the GPS line. Right click the pin on the map to remove it." % (label if label != "" else "your spot"), 3.0)
 
 
 func _update_gps() -> void:
 	var me := motor.global_position if player.state == Player.State.RIDING else player.global_position
 	var facing := motor.heading if player.state == Player.State.RIDING else player.get_facing_yaw()
+	# arrived at the pin?
+	if not _pin.is_empty() and _flat_dist(me, _pin["pos"]) < 18.0:
+		var where := str(_pin["label"]).trim_prefix("PIN: ")
+		hud.show_toast("Naabot mo na! You've arrived%s." % ("" if where == "PIN" else " at " + where), 3.0)
+		_pin = {}
+		hud.set_map_pin(false, Vector3.ZERO)
+	hud.set_map_enforcers(police.enforcer_positions())
 	var target := _gps_target()
 	_gps_timer -= get_physics_process_delta_time()
 	if target.is_empty():
@@ -910,6 +962,10 @@ func _update_hud() -> void:
 	hud.set_money(GameState.money)
 	hud.set_clock(GameState.day, GameState.get_time_string())
 	hud.set_light_ahead(traffic.upcoming_light(motor.global_position, motor.get_forward()) if riding else {})
+	hud.set_pull_over(police.pull_over_time())
+	var pose := combat.player_pose()
+	_hands.update_pose(cam.is_first_person() and player.state == Player.State.ON_FOOT and not _ending_day,
+		combat.is_in_combat(), pose["punch_t"], pose["right"], pose["blocking"], get_physics_process_delta_time())
 	# music plays like a radio while riding; the city is quieter at night
 	_radio.target_db = -9.0 if riding else -80.0
 	var h := GameState.hour_of_day()
