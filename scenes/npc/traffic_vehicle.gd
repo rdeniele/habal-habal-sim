@@ -195,5 +195,5 @@ func _crash_step(delta: float) -> void:
 
 func honk() -> void:
 	honk_cooldown = 6.0
-	_horn.stream = Sfx.tones([392.0, 494.0, 392.0, 494.0], 0.12, 0.25) if kind != "jeepney" else Sfx.tones([330.0, 330.0, 440.0], 0.18, 0.3)
+	_horn.stream = Sfx.horn(kind)
 	_horn.play()

@@ -87,6 +87,15 @@ func apply() -> void:
 		_:
 			vp.msaa_3d = Viewport.MSAA_4X
 
+	# Low: draw the 3D world at 77% resolution and sharpen it back up (FSR).
+	# Much faster on weak laptops/integrated graphics; menus and text stay sharp.
+	if graphics == "low":
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+		vp.scaling_3d_scale = 0.77
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = 1.0
+
 	# Audio
 	_set_bus_volume("Master", master_volume)
 	_set_bus_volume("Music", music_volume)

@@ -57,9 +57,17 @@ var _bump_cooldown := 0.0
 
 var _audio: AudioStreamPlayer3D
 var _playback: AudioStreamGeneratorPlayback
-var _engine_phase := 0.0
+var _pulse_phase := 0.0     # engine: where we are between two "putts"
+var _pulse_len := 1.0       # this putt's length (slightly random = more real)
+var _env := 0.0             # loudness of the current putt (decays)
+var _body_phase := 0.0      # the exhaust's "boom" tone
+var _lp := 0.0              # low-pass filter memory
+var _lp2 := 0.0
+var _rpm := 0.0             # smoothed engine speed 0..1
+var _noise := RandomNumberGenerator.new()
 var _horn_phase_a := 0.0
 var _horn_phase_b := 0.0
+var _horn_lp := 0.0
 
 
 func _ready() -> void:
@@ -457,8 +465,11 @@ func _make_wheel(parent: Node3D, pos: Vector3) -> Node3D:
 	return pivot
 
 
-# --- Placeholder sound: engine hum + horn, generated in code -----------------
-# (Real recorded sounds come in Milestone 7. This just makes testing feel alive.)
+# --- Engine + horn sound, generated in code --------------------------------
+# A small 4-stroke engine is a series of "putts" (one per firing). Each putt is a short
+# burst (a low boom + some noise) that fades fast. Faster putts = higher revs.
+# Scooters have automatic (CVT) gearboxes: revs jump up when you twist the throttle
+# and then stay fairly high while the speed builds.
 
 func _setup_audio() -> void:
 	var gen := AudioStreamGenerator.new()
@@ -481,19 +492,37 @@ func _process(delta: float) -> void:
 	if frames <= 0:
 		return
 	var horn_on := is_ridden and input_enabled and Input.is_action_pressed("horn")
-	var rpm := clampf(absf(speed) / maxf(get_top_speed(), 1.0), 0.0, 1.0)
-	var engine_freq := 38.0 + rpm * 95.0 + throttle_input * 10.0
-	var engine_vol := (0.05 + throttle_input * 0.05) if is_ridden else 0.0
+	var running := is_ridden and fuel_liters > 0.0 and is_active
+	var spd := clampf(absf(speed) / maxf(get_top_speed(), 1.0), 0.0, 1.0)
+	var want := maxf(spd * 0.85, throttle_input * 0.55) + throttle_input * 0.15
+	_rpm = lerpf(_rpm, want, minf(1.0, delta * (6.0 if want > _rpm else 2.5)))
+	var fire_hz := 13.0 + _rpm * 62.0        # putts per second (idle ~800 rpm .. ~4500 rpm)
+	var vol := (0.22 + throttle_input * 0.12) if running else 0.0
+	var decay := exp(-1.0 / (MIX_RATE * (0.018 - _rpm * 0.008)))
+	var tone := 1.0 - _rpm * 0.25
+	var bright := 0.12 + throttle_input * 0.18 + _rpm * 0.1
 	var buf := PackedVector2Array()
 	buf.resize(frames)
 	for i in frames:
 		var s := 0.0
-		if engine_vol > 0.0:
-			_engine_phase = fmod(_engine_phase + engine_freq / MIX_RATE, 1.0)
-			s += (_engine_phase * 2.0 - 1.0) * engine_vol   # buzzy sawtooth
+		if vol > 0.0:
+			_pulse_phase += fire_hz / MIX_RATE
+			if _pulse_phase >= _pulse_len:
+				_pulse_phase -= _pulse_len
+				_pulse_len = _noise.randf_range(0.93, 1.07)   # engines are never perfectly even
+				_env = 1.0
+			_body_phase = fmod(_body_phase + fire_hz * 2.6 * tone / MIX_RATE, 1.0)
+			var raw := (sin(TAU * _body_phase) * 0.75 + _noise.randf_range(-1.0, 1.0) * 0.45) * _env
+			_env *= decay
+			_lp += bright * (raw - _lp)
+			_lp2 += bright * (_lp - _lp2)
+			s += _lp2 * vol * 2.2
 		if horn_on:
-			_horn_phase_a = fmod(_horn_phase_a + 420.0 / MIX_RATE, 1.0)
-			_horn_phase_b = fmod(_horn_phase_b + 530.0 / MIX_RATE, 1.0)
-			s += ((1.0 if _horn_phase_a < 0.5 else -1.0) + (1.0 if _horn_phase_b < 0.5 else -1.0)) * 0.08
+			# scooter horn: two buzzy notes, softened by a filter
+			_horn_phase_a = fmod(_horn_phase_a + 415.0 / MIX_RATE, 1.0)
+			_horn_phase_b = fmod(_horn_phase_b + 520.0 / MIX_RATE, 1.0)
+			var h := ((1.0 if _horn_phase_a < 0.5 else -1.0) + (1.0 if _horn_phase_b < 0.5 else -1.0)) * 0.12
+			_horn_lp += 0.3 * (h - _horn_lp)
+			s += _horn_lp
 		buf[i] = Vector2(s, s)
 	_playback.push_buffer(buf)

@@ -194,7 +194,7 @@ func violation(reason: String, pos: Vector3) -> void:
 
 
 func _whistle() -> void:
-	_sfx.stream = Sfx.tones([2700.0, 2900.0, 2700.0, 2900.0], 0.09, 0.22)
+	_sfx.stream = Sfx.whistle()
 	_sfx.play()
 
 

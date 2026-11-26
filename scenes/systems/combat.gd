@@ -448,5 +448,5 @@ func cancel() -> void:
 
 
 func _play_hit(blocked: bool) -> void:
-	_sfx.stream = Sfx.tones([140.0, 90.0], 0.05, 0.5) if not blocked else Sfx.tones([260.0], 0.05, 0.3)
+	_sfx.stream = Sfx.punch(blocked)
 	_sfx.play()

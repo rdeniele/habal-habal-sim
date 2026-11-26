@@ -46,6 +46,7 @@ func _ready() -> void:
 	($World as GameWorld).environment.fog_density = 0.0007   # less haze from up high
 	($World as GameWorld).update_streaming(Vector3.ZERO, true)   # load around the plaza
 	_build_ui()
+	add_child(BackgroundAudio.create("music", "Music", -4.0))
 
 
 func _process(delta: float) -> void:

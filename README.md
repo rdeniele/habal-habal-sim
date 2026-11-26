@@ -5,7 +5,20 @@ Ride around, pick up passengers on the **Sakay** rider app (our own fictional ap
 
 Made with **Godot 4** (GDScript).
 
-## How to run
+## Play the game (Windows .exe)
+
+Build it once (needs Godot + its export templates), then just double-click the `.exe`:
+
+```powershell
+godot --headless --path . --export-release "Windows Desktop" builds/windows/HabalHabalSimulator.exe
+```
+
+The result is one file, `builds\windows\HabalHabalSimulator.exe` (~115 MB, map and all included).
+Copy it to any 64-bit Windows PC and run it, no install needed. Saves go to
+`%APPDATA%\Godotpp_userdata\Habal-Habal Simulator\`.
+Export templates: in the Godot editor, **Editor → Manage Export Templates → Download and Install**.
+
+## How to run (for development)
 
 1. Download **Godot 4.5 or newer** (the latest 4.x stable, *standard* version, not ".NET"): https://godotengine.org/download/windows/
    It's a single `.exe`, no installer. Unzip it anywhere, e.g. `C:\Tools\Godot\`.
@@ -65,6 +78,15 @@ Then every day:
 13. Press **C** to cycle cameras, including **first person**: on the motor the mouse turns your head and the
     **side mirrors** show the traffic behind you.
 14. Low on gas? Ride into the **Gasolinahan**, stop at the pump and press **E**. Out of gas? Hold W to push.
+15. **Sounds & music**: a putt-putt scooter engine, horns for every vehicle type, crashes, punches, the
+    enforcer's whistle, city noise, and a laid-back guitar tune that plays like a radio while you ride.
+    All made in code (no sound files). Volumes in **Settings** (Music / Sound effects).
+16. Passengers have several lines for every moment (getting on, chatting, thanks, complaints), so rides
+    don't repeat. All in Hiligaynon, Bisaya, Tagalog and English.
+17. **Graphics → Low** is made for weak laptops: no shadows, and the 3D world is drawn at a lower
+    resolution and sharpened back up (FSR). **High** adds soft corner shadows (SSAO). Night lights glow.
+18. **Controller**: plug in an Xbox-style gamepad. Menus work too: press any button to highlight one,
+    D-pad to move, A to press.
 
 ## Controls
 
@@ -80,11 +102,12 @@ Then every day:
 | Interact / refuel at pump | E | A |
 | Sakay phone | Tab | Back |
 | Accept / decline booking | 1 / 2 | D-pad up / down |
-| Full map | M | |
+| Full map | M | LB |
 | Fight: punch / block / dodge | J or left mouse / K or right mouse (hold) / L | X / B / RB |
 | Change camera | C | R3 |
 | Controls help | F1 | |
 | Pause menu (settings, save at home, quit) | Esc | Start |
+| Menus | Mouse | D-pad + A |
 | Respawn at home (debug) | F8 | |
 
 ## Project layout
@@ -104,7 +127,10 @@ scenes/npc/            passengers, traffic vehicles, people walking, angry drive
 scenes/ui/             HUD, Sakay phone app, gas pump menu, dialog box, license card, motor shop
 data/dialog/           passenger personalities + lines (Hiligaynon, Bisaya, Tagalog, English)
 data/map/bacolod/      converted map: meta.json, graph.json (roads), chunks/*.json (200 m tiles)
-tools/                 osm_download.sh (get OSM data), osm_convert.py (make the game map)
+tools/                 osm_download.sh (get OSM data), osm_convert.py (make the game map),
+                       make_icon.gd + make_ico.py (app icon from icon.svg)
+icon.svg / icon.ico    the app icon (original)
+export_presets.cfg     Windows .exe export settings
 tests/                 automated tests (see below)
 ```
 
@@ -161,6 +187,17 @@ godot --path . res://tests/character_test.tscn
 godot --path . res://tests/traffic_test.tscn
 ```
 
+```powershell
+godot --path . res://tests/perf_test.tscn
+```
+
+The sound test runs without a window and also saves every sound as a `.wav` in
+`%APPDATA%\Godotpp_userdata\Habal-Habal Simulator\sounds` so you can listen to them:
+
+```powershell
+godot --headless --path . -s res://tests/audio_test.gd
+```
+
 Saves and settings live in `%APPDATA%\Godot\app_userdata\Habal-Habal Simulator\` (`saves/slot_1.json` ... and `settings.cfg`).
 
 Most models are built from code (boxes/cylinders) as placeholders, so everything is plain text and easy to change.
@@ -177,7 +214,8 @@ Most models are built from code (boxes/cylinders) as placeholders, so everything
    + new early-2000s style characters: tapered limbs with elbows/knees, painted pixel faces,
      hairstyles, outfits by passenger type (lola, nurse, student, worker...), Filipino skin tones
 6. ✅ Traffic, traffic lights, people walking around, road rage & fist fights (on the real roads)
-7. Polish & Windows export
+7. ✅ Polish & Windows export – code-made sounds and music, more passenger lines, lighting pass,
+   gamepad menus, low-end graphics mode, app icon, one-file Windows .exe
 
 ## Credits
 

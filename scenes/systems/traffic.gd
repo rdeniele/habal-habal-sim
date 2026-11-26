@@ -150,7 +150,7 @@ func _check_vehicle_crashes() -> void:
 
 func play_crash(where: Vector3) -> void:
 	_crash_sfx.global_position = where
-	_crash_sfx.stream = Sfx.tones([110.0, 80.0, 60.0, 140.0], 0.06, 0.6)
+	_crash_sfx.stream = Sfx.crash()
 	_crash_sfx.play()
 
 

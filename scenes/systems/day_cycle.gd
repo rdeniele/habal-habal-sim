@@ -53,6 +53,10 @@ func update_now() -> void:
 	world.environment.fog_light_color = (k[3] as Color).lerp(Color("#cfe3ee"), 0.3)
 	night_amount = k[5]
 	world.set_night_glow(night_amount)
+	# bloom: lamps, windows and headlights get a soft glow after dark (not on Low)
+	var env := world.environment
+	env.glow_enabled = Settings.graphics != "low" and night_amount > 0.02
+	env.glow_intensity = 0.9 * night_amount
 
 	if h >= SUNRISE and h < SUNSET:
 		# Sun: rises in the east (+X), sets in the west, highest at noon.
@@ -92,5 +96,19 @@ func _apply_graphics() -> void:
 	world.sun.shadow_enabled = Settings.shadows_enabled()
 	world.sun.directional_shadow_max_distance = 160.0 if Settings.graphics == "high" else 100.0
 	world.environment.fog_density = 0.0045 if Settings.graphics == "low" else 0.0018
+	var env := world.environment
+	# glow (bloom) settings; only bright things (lamps/windows/lights) glow
+	env.glow_hdr_threshold = 1.1
+	env.glow_bloom = 0.04
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	# a bit warmer and richer colors: sunny tropical look
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.12
+	env.adjustment_contrast = 1.04
+	# soft shadows in corners and under things (only on High: costs some speed)
+	env.ssao_enabled = Settings.graphics == "high"
+	env.ssao_radius = 1.6
+	env.ssao_intensity = 1.4
+	world.sun.shadow_blur = 1.5
 	if cam != null:
 		cam.camera.far = Settings.draw_distance()

@@ -5,11 +5,14 @@ Every third-party asset used in the game must be listed here with its license.
 ## Engine
 - [Godot Engine](https://godotengine.org) – MIT License
 
-## Code-made placeholders (no third-party assets yet)
+## Made in code (original, no third-party assets)
 - All 3D models are built in code from boxes/cylinders (original), including the stylized
   San Sebastian Cathedral, Public Plaza bandstand and Provincial Capitol.
 - Pixel textures (facades, roofs, asphalt, sidewalk, grass, water) are generated in code (original).
-- Engine hum and horn are generated in code (original).
+- All sounds and music are synthesized in code (`scenes/common/sfx.gd`, original): scooter engine,
+  horns, crash, punches, whistle, siren, city ambience, and the background guitar tune
+  (an original chord loop, Karplus-Strong plucked strings).
+- App icon (`icon.svg`) is original.
 
 ## Map data
 - Bacolod City map: © OpenStreetMap contributors, licensed under the Open Database License (ODbL)

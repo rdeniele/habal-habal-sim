@@ -578,7 +578,12 @@ func _say(line_type: String) -> void:
 		return
 	var lines: Dictionary = person["lines"]
 	var by_lang: Dictionary = lines.get(line_type, {})
-	var text: String = by_lang.get(str(_request["lang"]), by_lang.get("en", ""))
+	var options: Variant = by_lang.get(str(_request["lang"]), by_lang.get("en", ""))
+	var text := ""
+	if options is Array and not (options as Array).is_empty():
+		text = str((options as Array).pick_random())   # several lines per situation: pick one
+	elif options is String:
+		text = options
 	if text != "":
 		hud.show_dialog(str(_request["name"]), text)
 

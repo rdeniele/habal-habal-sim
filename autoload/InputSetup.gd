@@ -61,6 +61,7 @@ func _enter_tree() -> void:
 	_keys("phone", [KEY_TAB])
 	_buttons("phone", [JOY_BUTTON_BACK])
 	_keys("map", [KEY_M])
+	_buttons("map", [JOY_BUTTON_LEFT_SHOULDER])
 	_keys("pause", [KEY_ESCAPE])
 	_buttons("pause", [JOY_BUTTON_START])
 	_keys("toggle_help", [KEY_F1])

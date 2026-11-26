@@ -45,6 +45,8 @@ var _bounds_timer := 0.0
 var _last_valid := Vector3.ZERO   # last in-bounds spot (respawn point if you leave the city)
 var _returning := false
 var _sfx: AudioStreamPlayer
+var _city_sound: BackgroundAudio
+var _radio: BackgroundAudio
 var _last_ui_open := false
 var _ending_day := false
 
@@ -108,6 +110,11 @@ func _ready() -> void:
 	_sfx = AudioStreamPlayer.new()
 	_sfx.bus = "SFX"
 	add_child(_sfx)
+	# background sound: city noise always, and "radio" music while you ride
+	_city_sound = BackgroundAudio.create("city", "SFX", -12.0)
+	add_child(_city_sound)
+	_radio = BackgroundAudio.create("music", "Music", -80.0)
+	add_child(_radio)
 	respawn_at_home()
 	_refresh_mouse(true)
 	if not GameState.story_done:
@@ -903,6 +910,10 @@ func _update_hud() -> void:
 	hud.set_money(GameState.money)
 	hud.set_clock(GameState.day, GameState.get_time_string())
 	hud.set_light_ahead(traffic.upcoming_light(motor.global_position, motor.get_forward()) if riding else {})
+	# music plays like a radio while riding; the city is quieter at night
+	_radio.target_db = -9.0 if riding else -80.0
+	var h := GameState.hour_of_day()
+	_city_sound.target_db = -20.0 if (h >= 21.0 or h < 5.0) else -12.0
 	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
 	_update_gps()
 
