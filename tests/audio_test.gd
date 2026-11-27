@@ -22,8 +22,18 @@ func _init() -> void:
 		"punch_blocked": func() -> AudioStreamWAV: return Sfx.punch(true),
 		"whistle": func() -> AudioStreamWAV: return Sfx.whistle(),
 		"siren": func() -> AudioStreamWAV: return Sfx.siren(),
-		"city_ambience": func() -> AudioStreamWAV: return Sfx.city_ambience(),
 		"music_loop": func() -> AudioStreamWAV: return Sfx.music_loop(),
+		"amb_city": func() -> AudioStreamWAV: return NatureSfx.loop("city"),
+		"amb_wind": func() -> AudioStreamWAV: return NatureSfx.loop("wind"),
+		"amb_leaves": func() -> AudioStreamWAV: return NatureSfx.loop("leaves"),
+		"amb_sea": func() -> AudioStreamWAV: return NatureSfx.loop("sea"),
+		"amb_night": func() -> AudioStreamWAV: return NatureSfx.loop("night"),
+		"bird_sparrow": func() -> AudioStreamWAV: return NatureSfx.bird("sparrow", 0),
+		"bird_dove": func() -> AudioStreamWAV: return NatureSfx.bird("dove", 0),
+		"bird_myna": func() -> AudioStreamWAV: return NatureSfx.bird("myna", 0),
+		"rooster": func() -> AudioStreamWAV: return NatureSfx.rooster(0),
+		"dog": func() -> AudioStreamWAV: return NatureSfx.dog(0),
+		"gecko": func() -> AudioStreamWAV: return NatureSfx.gecko(0),
 	}
 	for sound_name: String in sounds:
 		var t0 := Time.get_ticks_msec()

@@ -249,6 +249,10 @@ func _license() -> void:
 	_clear_target()
 	var player_name := await d.ask_text("Clerk", "Maayong aga! Ano ang imo bug-os nga ngalan?\n(Good morning! What's your full name?)", "Juan Dela Cruz")
 	GameState.player_name = player_name
+	var g := await d.choose("Clerk", "Lalaki ka ukon babaye?\n(Are you male or female?)", ["Lalaki (Male)", "Babaye (Female)"])
+	GameState.player_female = g == 1
+	player.refresh_look()
+	motor.refresh_rider()
 	await d.say("Clerk", "Salamat, %s. Ang license fee %s.\n(Thank you. The license fee is %s.)" \
 		% [player_name, Economy.format_peso(Economy.LICENSE_FEE), Economy.format_peso(Economy.LICENSE_FEE)])
 	GameState.add_money(-Economy.LICENSE_FEE)
@@ -479,7 +483,8 @@ func _spawn_nanay() -> void:
 	_nanay.build_with_look("Nanay", {
 		"body": "female", "skin": Color("#b97d4f"), "hair": "bun", "hair_color": Color("#6b6b6b"),
 		"top": "dress", "top_color": Color("#e07a9b"), "bottom": "skirt", "bottom_color": Color("#e07a9b"),
-		"age": "old", "helmet": Color(0, 0, 0, 0)})
+		"age": "old", "helmet": Color(0, 0, 0, 0),
+		"model": "res://assets/characters/npc/nanay.glb"})   # tools/blender/make_apose.py
 	_nanay.add_name_tag("Nanay")
 	# Nanay stands a couple of steps away; you face her and the camera looks from the side
 	# so both of you are in view.

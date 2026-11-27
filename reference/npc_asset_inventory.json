@@ -1,0 +1,122 @@
+[
+  {
+    "name": "customer_f",
+    "triangles": 11351,
+    "bytes": 1504364,
+    "sha256": "ee43b3bf8f0ffb772b5df89442df5229b956fe5480f907ceac2bc9814349e424"
+  },
+  {
+    "name": "customer_m",
+    "triangles": 10682,
+    "bytes": 1508632,
+    "sha256": "f1752e195d45e6cc17692b4cb2110862c40f7ffc9d143f4153ba6df9e29e36b0"
+  },
+  {
+    "name": "delivery_f",
+    "triangles": 9302,
+    "bytes": 1490432,
+    "sha256": "66f9488d392c15ca5f6c92c30de21ed7efa10e6e9128f1318f63caa9c325d9fa"
+  },
+  {
+    "name": "delivery_m",
+    "triangles": 10845,
+    "bytes": 1485544,
+    "sha256": "16ae6c3716a292b25b48d957dbf9e6dc691fe8d76c88084371b781d705ba3e76"
+  },
+  {
+    "name": "enforcer_f",
+    "triangles": 13711,
+    "bytes": 1644500,
+    "sha256": "df03faebe26cf5a7f329f045cce1ee3a049e7241c41d9bd49e2024b599a80421"
+  },
+  {
+    "name": "enforcer_m",
+    "triangles": 12429,
+    "bytes": 1584116,
+    "sha256": "b49f5184e3b6dc284022737c0d0957c63f8c264477013a9a87587081f935fc68"
+  },
+  {
+    "name": "fellow_rider_f",
+    "triangles": 12527,
+    "bytes": 1641448,
+    "sha256": "de38b5b4dcf84947070200cc6e51f011054f1534b78f2a1e433b6e765dd9bb72"
+  },
+  {
+    "name": "fellow_rider_m",
+    "triangles": 13106,
+    "bytes": 1641108,
+    "sha256": "caa35755dcb493f3d4fba2a345152f7b5af7b2a01ab92b92be4ba22e367330ce"
+  },
+  {
+    "name": "misc_f",
+    "triangles": 10934,
+    "bytes": 1469720,
+    "sha256": "0cd4947f1048b629e8c88f41c81edf5d3bc3a4d604ea92f9a111c08225f6e2dd"
+  },
+  {
+    "name": "misc_m",
+    "triangles": 11028,
+    "bytes": 1438064,
+    "sha256": "1e53c149b1df4764dc486212001ba9badb2b7927661633e6477b59bd298347b0"
+  },
+  {
+    "name": "office_worker_f",
+    "triangles": 11000,
+    "bytes": 1615456,
+    "sha256": "23b448961b45b5ec1e64c060d54c30dca7ec24cae848a76d8a7b9067a72c6355"
+  },
+  {
+    "name": "office_worker_m",
+    "triangles": 12491,
+    "bytes": 1568064,
+    "sha256": "4bd2f8c219411b8fcf5759d32fed701c1492a7350823d91b57cf8b9c0a867d61"
+  },
+  {
+    "name": "pedestrian_f",
+    "triangles": 9539,
+    "bytes": 1453868,
+    "sha256": "7a5a50fe06550a6b55ba7a542991e5230d42b525ecb13d012f8f0c5385c0bba6"
+  },
+  {
+    "name": "pedestrian_m",
+    "triangles": 13015,
+    "bytes": 1620840,
+    "sha256": "147cba3b1d30c73283563df531cf8778668085ebb7d544f2aa5480101f6256cb"
+  },
+  {
+    "name": "student_f",
+    "triangles": 13060,
+    "bytes": 1616536,
+    "sha256": "73a19120aebf4de0c9fe4fe324d5de72c81ebc779814d3a0f4ea8465177ff23f"
+  },
+  {
+    "name": "student_m",
+    "triangles": 10621,
+    "bytes": 1480064,
+    "sha256": "d9f0a4061ec3dda561f4f3fa673240401e9cee73b6a7bb1c796b1686e92cf9ec"
+  },
+  {
+    "name": "technician_f",
+    "triangles": 13002,
+    "bytes": 1613968,
+    "sha256": "359c313aeb8642c76584328694a8ecc17acbd9b86e56d25b35d411dd7a5fd07c"
+  },
+  {
+    "name": "technician_m",
+    "triangles": 10632,
+    "bytes": 1387204,
+    "sha256": "346f18b4dbf969b9caf6251839fdf48936c32faab4d43d35c446ac4c82cb09b7"
+  },
+  {
+    "name": "vendor_f",
+    "triangles": 11109,
+    "bytes": 1426916,
+    "sha256": "aadcf5e98d501212cfb74711d57b05b14bc7001328d236148950819d3c550dee"
+  },
+  {
+    "name": "vendor_m",
+    "triangles": 12331,
+    "bytes": 1540344,
+    "sha256": "572d1e1335217cf2c9298f376b2b629636d232ec98d73028bff0ed2ae2f7a66e"
+  }
+]

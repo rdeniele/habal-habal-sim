@@ -27,7 +27,11 @@ static func merge(root: Node3D, skip: Array = [], visibility_end: float = 0.0,
 			continue
 		var nbasis := xf.basis.inverse().transposed()
 		for s in mesh.get_surface_count():
-			var mat: Material = mi.material_override if mi.material_override != null else mesh.surface_get_material(s)
+			var mat: Material = mi.material_override
+			if mat == null:
+				mat = mi.get_surface_override_material(s)
+			if mat == null:
+				mat = mesh.surface_get_material(s)
 			var key_mat := _group_for(mat)
 			var key: String = key_mat[0]
 			if not groups.has(key):
@@ -104,14 +108,18 @@ static func _group_for(mat: Material) -> Array:
 				or sm.shading_mode != BaseMaterial3D.SHADING_MODE_PER_PIXEL:
 			return ["own_%d" % sm.get_instance_id(), sm, Color.WHITE]   # special: keep as is
 		var tex := sm.albedo_texture
-		var key := "tex_%d" % (tex.get_instance_id() if tex != null else 0)
+		# shiny and metal pieces (chrome, glass, paint) get their own group so they stay shiny
+		var metal := snappedf(sm.metallic, 0.25)
+		var rough := snappedf(sm.roughness, 0.25)
+		var key := "tex_%d_m%.2f_r%.2f" % [tex.get_instance_id() if tex != null else 0, metal, rough]
 		if not _plain_mats.has(key):
 			var shared := StandardMaterial3D.new()
 			shared.vertex_color_use_as_albedo = true
 			shared.vertex_color_is_srgb = true
 			shared.albedo_texture = tex
 			shared.texture_filter = sm.texture_filter
-			shared.roughness = sm.roughness
+			shared.roughness = maxf(rough, 0.08)
+			shared.metallic = metal
 			_plain_mats[key] = shared
 		return [key, _plain_mats[key], sm.albedo_color]
 	return ["other_%d" % (mat.get_instance_id() if mat != null else 0), mat, Color.WHITE]

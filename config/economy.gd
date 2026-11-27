@@ -19,8 +19,8 @@ const GAS_PRICE_PER_LITER: int = 62      # regular gasoline, approx. Nov 2026
 const FUEL_USE_MULTIPLIER: float = 8.0
 
 # --- Fares -----------------------------------------------------------------
-const BASE_FARE: int = 15             # fare = BASE_FARE + PER_KM * km ...
-const PER_KM: int = 15
+const BASE_FARE: int = 0               # fare = BASE_FARE + PER_KM * km ...
+const PER_KM: int = 40                 # habal-habal rates: about ₱120 for 3 km
 const MIN_FARE: int = 20              # ...but never less than this (nearest rides pay ₱20)
 const SURGE_MULTIPLIER: float = 1.3      # rush hours (7-9 AM, 5-7 PM) and rain
 const SURGE_HOURS: Array = [[7.0, 9.0], [17.0, 19.0]]   # rush hours (24h clock)

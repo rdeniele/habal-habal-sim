@@ -245,42 +245,6 @@ static func siren() -> AudioStreamWAV:
 
 # --- Long sounds (made on a background thread, see BackgroundAudio) ----------------------
 
-## City background: distant traffic rumble, far-away horns and the odd rooster/bird.
-## 12-second loop.
-static func city_ambience() -> AudioStreamWAV:
-	var seconds := 12.0
-	var n := int(RATE * seconds)
-	var s := PackedFloat32Array()
-	s.resize(n)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 1903
-	# brown noise = deep rumble of far traffic
-	var b := 0.0
-	var y := 0.0
-	for i in n:
-		b = clampf(b + rng.randf_range(-1.0, 1.0) * 0.02, -1.0, 1.0)
-		y += 0.05 * (b - y)
-		var t := float(i) / RATE
-		var swell := 0.75 + 0.25 * sin(TAU * t / seconds * 2.0)   # traffic comes and goes (loops cleanly)
-		s[i] = y * 0.9 * swell
-	# far-away horns (quiet and muffled)
-	for k in 5:
-		var kinds := ["car", "car", "tricycle", "jeepney", "motorbike"]
-		var h := _horn_far(kinds[k] as String, rng)
-		_mix(s, h, int(rng.randf_range(0.2, seconds - 1.4) * RATE), rng.randf_range(0.12, 0.22))
-	# birds chirping now and then
-	for k in 4:
-		_mix(s, _chirp(rng), int(rng.randf_range(0.2, seconds - 0.6) * RATE), 0.06)
-	# make the loop seamless: blend the last half second into the start
-	var xf := int(RATE * 0.5)
-	for i in xf:
-		var w := float(i) / xf
-		s[i] = s[i] * w + s[n - xf + i] * (1.0 - w)
-	s.resize(n - xf)
-	_normalize(s, 0.7)
-	return _to_wav(s, true)
-
-
 static func _horn_far(kind: String, rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var f := rng.randf_range(0.9, 1.1)
 	match kind:
@@ -293,21 +257,7 @@ static func _horn_far(kind: String, rng: RandomNumberGenerator) -> PackedFloat32
 	return _horn_tone([350.0 * f, 440.0 * f], 0.35, 1.0, 0.08)
 
 
-static func _chirp(rng: RandomNumberGenerator) -> PackedFloat32Array:
-	var s := PackedFloat32Array()
-	s.resize(int(RATE * 0.5))
-	var base := rng.randf_range(3000.0, 4200.0)
-	for c in 3:
-		var at := int(c * RATE * 0.13)
-		var ph := 0.0
-		for i in int(RATE * 0.07):
-			var t := float(i) / RATE
-			ph += (base + t * 9000.0) / RATE
-			s[at + i] += sin(TAU * ph) * sin(PI * t / 0.07)
-	return s
-
-
-## Background music: a laid-back acoustic guitar loop (like a radio in a carinderia).
+## Menu music: a laid-back acoustic guitar loop (the game itself has no music, see NatureSfx).
 ## Original tune, made from scratch: G - D - Em - C, 92 BPM, 8 bars (~21 s), loops.
 static func music_loop() -> AudioStreamWAV:
 	var bpm := 92.0

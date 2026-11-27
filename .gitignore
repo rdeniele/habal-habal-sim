@@ -16,3 +16,12 @@ data/osm_raw/
 
 # Blender backup files
 *.blend1
+
+# Local NPC generation environment, downloaded weights and intermediate meshes
+/tools/triposr_tmp/
+__pycache__/
+
+# Leftovers of earlier NPC pipelines (the current .glb files carry their own textures)
+/assets/characters/npc/*_[mf].blend
+/assets/characters/npc/*_[mf]_face.png*
+/assets/characters/npc/*_[mf]_texture.png*

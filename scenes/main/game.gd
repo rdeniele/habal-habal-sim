@@ -47,8 +47,7 @@ var _bounds_timer := 0.0
 var _last_valid := Vector3.ZERO   # last in-bounds spot (respawn point if you leave the city)
 var _returning := false
 var _sfx: AudioStreamPlayer
-var _city_sound: BackgroundAudio
-var _radio: BackgroundAudio
+var _ambience: Ambience           # in-game sound: no music, just the world (wind, birds, sea...)
 var _last_ui_open := false
 var _ending_day := false
 
@@ -117,11 +116,10 @@ func _ready() -> void:
 	_sfx = AudioStreamPlayer.new()
 	_sfx.bus = "SFX"
 	add_child(_sfx)
-	# background sound: city noise always, and "radio" music while you ride
-	_city_sound = BackgroundAudio.create("city", "SFX", -12.0)
-	add_child(_city_sound)
-	_radio = BackgroundAudio.create("music", "Music", -80.0)
-	add_child(_radio)
+	# background sound: no music in the game, just the world around you
+	_ambience = Ambience.new()
+	_ambience.setup(world, player, motor)
+	add_child(_ambience)
 	respawn_at_home()
 	_refresh_mouse(true)
 	if not GameState.story_done:
@@ -293,7 +291,7 @@ func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 	motor.fall_over()
 	# Throw the rider away from the wall, a bit up in the air.
 	var from := motor.global_position + wall_normal * 1.2 + Vector3.UP * 0.9
-	player.knock_off(from, wall_normal * 3.0 + Vector3.UP * 3.5, impact)
+	player.knock_off(from, wall_normal * 3.0 + Vector3.UP * 3.5, impact, motor.get_forward() * impact)
 	cam.set_target(player, false)
 	hud.show_toast("Aray! Natumba ka! (You crashed)\nPress F near the motor to pick it up.", 3.5)
 
@@ -721,7 +719,7 @@ func _on_motor_hit_vehicle(v: Node) -> void:
 
 ## You hit someone walking: they fall and shout; your passenger is not happy.
 func _on_hit_person(person: Node, impact: float) -> void:
-	(person as Pedestrian).knock(impact)
+	(person as Pedestrian).knock(impact, motor.get_forward() * motor.speed)
 	booking.on_hit_person()
 	# a slow bump is still an offense; a real hit is reckless driving
 	police.violation("reckless" if impact >= 4.0 else "bump", person.global_position)
@@ -968,11 +966,8 @@ func _update_hud() -> void:
 	var pose := combat.player_pose()
 	_hands.update_pose(cam.is_first_person() and player.state == Player.State.ON_FOOT and not _ending_day,
 		combat.is_in_combat(), pose["punch_t"], pose["right"], pose["blocking"], get_physics_process_delta_time())
-	# music plays like a radio while riding; the city is quieter at night
-	_radio.target_db = -9.0 if riding else -80.0
-	var h := GameState.hour_of_day()
-	_city_sound.target_db = -20.0 if (h >= 21.0 or h < 5.0) else -12.0
-	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
+	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage,
+		motor.fuel_liters, motor.get_tank_liters(), motor.get_range_km())
 	_update_gps()
 
 

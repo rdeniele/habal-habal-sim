@@ -30,7 +30,8 @@ func _run() -> void:
 
 	# --- Fares ---------------------------------------------------------------
 	_check(Economy.calc_fare(0.05, 10.0) == Economy.MIN_FARE, "shortest ride pays the minimum (%d)" % Economy.MIN_FARE)
-	print("  fares: 0.3 km=%d  0.8 km=%d  1.5 km=%d" % [Economy.calc_fare(0.3, 10.0), Economy.calc_fare(0.8, 10.0), Economy.calc_fare(1.5, 10.0)])
+	print("  fares: 0.3 km=%d  0.8 km=%d  1.5 km=%d  3 km=%d" % [Economy.calc_fare(0.3, 10.0), Economy.calc_fare(0.8, 10.0), Economy.calc_fare(1.5, 10.0), Economy.calc_fare(3.0, 10.0)])
+	_check(Economy.calc_fare(3.0, 10.0) == 120, "3 km pays 120")
 
 	# --- Passenger variety ---------------------------------------------------
 	var seen := {}

@@ -7,9 +7,11 @@ extends Node3D
 ## Body types: slim / average / heavy, plus a little height variety.
 ## Faces -Z (Godot's "forward"). Origin is at the feet.
 ##
-## Two ways to build:
-##   build(jacket, pants, helmet)   -> the rider look (jacket + helmet)
+## Ways to build:
+##   build_look(rider_look(female)) -> the player: green rider jacket, cargo pants, gloves, backpack
+##   build(jacket, pants, helmet)   -> a plain jacket + helmet look (story characters)
 ##   build_look(look)               -> any person, see random_look() for the keys
+## Ages: "kid", "teen", "adult", "old" (elders stoop a little; kids are small with bigger heads).
 ##
 ## Joints: Body -> LegL/LegR (hips) -> Shin (knees); Body -> Upper (spine) -> ArmL/ArmR
 ## (shoulders) -> Forearm (elbows); Upper -> Head (neck). Animations: walk() (walk / run /
@@ -22,6 +24,17 @@ const HAIR_COLORS := ["#1a1410", "#1a1410", "#2e1f14", "#3b2716", "#5a3a22"]
 const SHIRT_COLORS := ["#e63946", "#f4f1de", "#2a9d8f", "#264653", "#ffb703", "#8338ec",
 	"#3a86ff", "#fb5607", "#6a994e", "#f28482", "#ffffff", "#adb5bd"]
 const PANTS_COLORS := ["#2d3047", "#3d5a80", "#1d3557", "#4a4e69", "#6b4f3a", "#22223b", "#7f5539"]
+const KID_COLORS := ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff924c", "#f15bb5", "#00bbf9"]
+const CAP_COLORS := ["#1d3557", "#e63946", "#222222", "#f1faee", "#2a9d8f", "#ffb703"]
+const BAG_COLORS := ["#2b2d31", "#1d3557", "#6b4f3a", "#4a5e38", "#9d0208"]
+# The player's rider outfit (from the character sheet)
+const RIDER_GREEN := Color("#4b6b3c")
+const RIDER_PANTS := Color("#36373c")
+const RIDER_DARK := Color("#26272b")
+## Detailed rigged rider made from the character sheet (image-to-3D). Female: not made yet.
+const RIDER_MALE_MODEL := "res://assets/characters/rider_male.glb"
+## Detailed NPCs built by tools/blender/make_npc.py: "<type>_<m|f>.glb"
+const NPC_MODELS := "res://assets/characters/npc/%s_%s.glb"
 
 # Body measurements (meters, adult). Teens and elders scale from these.
 const HIP_Y := 0.92
@@ -44,6 +57,16 @@ var _body: Node3D        # whole body (bob / sway / lean)
 var _upper: Node3D       # spine: torso, arms, head turn with it
 var _head: Node3D        # neck: head, hair, helmet
 var _female := false
+# A detailed skinned model (look["model"] = path to a rigged .glb) follows the joints below:
+var _skin_root: Node3D
+var _skel: Skeleton3D
+var _bone_map: Array = []      # per bone: [pivot Node3D or null, align Basis]
+var _rest_global: Array = []   # per bone: rest Transform3D in skeleton space
+## Hands reach for these (e.g. the motor's grips): {"l": Node3D, "r": Node3D}. Skinned model only.
+var hand_targets: Dictionary = {}
+var _first_person := false     # the camera is in our head: hide the head, keep the body
+var _helmet_on := false
+var _stoop := 0.0         # elders lean forward a little
 var _time_offset := 0.0
 var _look: Dictionary = {}
 ## Performance: hide this person beyond this distance (0 = always drawn). Set before building.
@@ -70,9 +93,24 @@ func build(jacket: Color, pants: Color, helmet: Color, skin: Color = SKIN) -> vo
 	})
 
 
+## The player's look: green rider jacket (reflective stripe, bike logo, flag patch, hood),
+## baggy cargo pants, fingerless gloves, backpack, a bandage on the cheek. Male or female.
+static func rider_look(female: bool) -> Dictionary:
+	return {
+		"body": "female" if female else "male", "skin": Color("#b97d4f"),
+		"hair": "ponyr" if female else "messy", "hair_color": Color("#1a1410"),
+		"top": "rider_jacket", "top_color": RIDER_GREEN, "hood_color": Color("#2f3035"),
+		"bottom": "cargo", "bottom_color": RIDER_PANTS, "shoe_color": Color("#3a3b40"),
+		"gloves": RIDER_DARK, "backpack": Color("#465a35"), "bandage": true,
+		"helmet": Color("#ececea"), "build": "average", "age": "adult",
+		"model": "" if female else RIDER_MALE_MODEL,
+	}
+
+
 ## A random everyday person. `kind` hints the outfit: "", "student", "tita", "office",
-## "worker", "tourist", "vendor", "nurse", "lola", "teen", "seaman", "call_center".
-static func random_look(rng: RandomNumberGenerator, female: bool, kind: String = "") -> Dictionary:
+## "worker", "tourist", "vendor", "nurse", "lola", "lolo", "kid", "teen", "seaman", "call_center".
+## any_age = true lets an unspecified kind ("") become a kid, teen or elder (people on the street).
+static func random_look(rng: RandomNumberGenerator, female: bool, kind: String = "", any_age: bool = false) -> Dictionary:
 	var look := {
 		"body": "female" if female else "male",
 		"skin": Color(SKIN_TONES[rng.randi() % SKIN_TONES.size()]),
@@ -90,13 +128,22 @@ static func random_look(rng: RandomNumberGenerator, female: bool, kind: String =
 	if not female:
 		look["facial"] = ["", "", "", "stubble", "mustache", "goatee"][rng.randi() % 6]
 	if female:
-		look["hair"] = ["long", "ponytail", "bun", "bob", "long"][rng.randi() % 5]
-		look["top"] = ["tshirt", "tank", "tshirt", "dress"][rng.randi() % 4]
-		look["bottom"] = ["jeans", "skirt", "shorts", "pants"][rng.randi() % 4]
+		look["hair"] = ["long", "ponytail", "bun", "bob", "long", "ponyr"][rng.randi() % 6]
+		look["top"] = ["tshirt", "tank", "tshirt", "dress", "hoodie"][rng.randi() % 5]
+		look["bottom"] = ["jeans", "skirt", "shorts", "pants", "cargo"][rng.randi() % 5]
 	else:
-		look["hair"] = ["short", "buzz", "side", "curly", "short"][rng.randi() % 5]
-		look["top"] = ["tshirt", "tank", "polo", "tshirt"][rng.randi() % 4]
-		look["bottom"] = ["jeans", "shorts", "pants"][rng.randi() % 3]
+		look["hair"] = ["short", "buzz", "side", "curly", "short", "messy"][rng.randi() % 6]
+		look["top"] = ["tshirt", "tank", "polo", "tshirt", "hoodie"][rng.randi() % 5]
+		look["bottom"] = ["jeans", "shorts", "pants", "cargo"][rng.randi() % 4]
+	if look["top"] == "hoodie":
+		look["hood_color"] = (look["top_color"] as Color).darkened(0.12)
+	if rng.randf() < (0.1 if female else 0.2):
+		look["cap"] = Color(CAP_COLORS[rng.randi() % CAP_COLORS.size()])
+	if rng.randf() < 0.12:
+		look["backpack"] = Color(BAG_COLORS[rng.randi() % BAG_COLORS.size()])
+	if any_age and kind == "":
+		var a := rng.randf()
+		kind = "kid" if a < 0.12 else ("teen" if a < 0.24 else ("vendor" if a < 0.36 else ("" if a < 0.86 else ("lola" if female else "lolo"))))
 	match kind:
 		"student":
 			look["top"] = "polo"
@@ -118,6 +165,36 @@ static func random_look(rng: RandomNumberGenerator, female: bool, kind: String =
 			look["age"] = "old"
 			look["glasses"] = rng.randf() < 0.4
 			look["shoes"] = "slippers"
+			look["cane"] = rng.randf() < 0.3
+			look.erase("cap")
+			look.erase("backpack")
+		"lolo":
+			look["top"] = ["polo", "tshirt", "longsleeve"][rng.randi() % 3]
+			look["top_color"] = Color(["#f4f1de", "#adb5bd", "#6a994e", "#3d5a80", "#ffffff"][rng.randi() % 5])
+			look["bottom"] = "pants"
+			look["hair"] = ["short", "buzz", "bald"][rng.randi() % 3]
+			look["hair_color"] = Color(["#b5b5b5", "#d8d8d8", "#8d8d8d"][rng.randi() % 3])
+			look["facial"] = ["", "mustache", "stubble"][rng.randi() % 3]
+			look["age"] = "old"
+			look["build"] = "slim" if rng.randf() < 0.5 else "average"
+			look["glasses"] = rng.randf() < 0.45
+			look["shoes"] = "slippers"
+			look["cane"] = rng.randf() < 0.45
+			look.erase("backpack")
+		"kid":
+			look["age"] = "kid"
+			look["build"] = "average"
+			look["height"] = rng.randf_range(0.9, 1.08)
+			look["facial"] = ""
+			look["glasses"] = rng.randf() < 0.05
+			look["top"] = ["tshirt", "tank", "tshirt", "hoodie"][rng.randi() % 4]
+			look["top_color"] = Color(KID_COLORS[rng.randi() % KID_COLORS.size()])
+			look["hood_color"] = (look["top_color"] as Color).darkened(0.12)
+			look["bottom"] = "shorts" if not female or rng.randf() < 0.5 else "skirt"
+			look["hair"] = ["short", "buzz", "messy"][rng.randi() % 3] if not female else ["ponytail", "bob", "long"][rng.randi() % 3]
+			look["shoes"] = "slippers" if rng.randf() < 0.5 else ""
+			if rng.randf() < 0.3:
+				look["backpack"] = Color(KID_COLORS[rng.randi() % KID_COLORS.size()])
 		"office", "call_center":
 			look["glasses"] = rng.randf() < 0.3
 			look["top"] = "longsleeve" if not female else ["longsleeve", "polo"][rng.randi() % 2]
@@ -145,6 +222,17 @@ static func random_look(rng: RandomNumberGenerator, female: bool, kind: String =
 	if look["top"] == "dress":
 		look["bottom"] = "skirt"
 		look["bottom_color"] = look["top_color"]
+	# a detailed model for this kind of person, if one exists in assets/characters/npc/
+	var npc_type: String = {"vendor": "vendor", "student": "student", "office": "office_worker",
+		"call_center": "office_worker", "worker": "technician", "": ["pedestrian", "customer", "misc", "delivery", "fellow_rider"][rng.randi() % 5]}.get(kind, "")
+	if kind in ["enforcer", "customer", "pedestrian", "fellow_rider", "office_worker", "technician", "delivery", "misc"]:
+		npc_type = kind
+	if npc_type != "" and look.get("age", "adult") in ["adult", "teen"]:
+		var path := NPC_MODELS % [npc_type, "f" if female else "m"]
+		if ResourceLoader.exists(path):
+			look["model"] = path
+	if look.has("cap") and look["hair"] in ["messy", "ponyr", "curly"]:
+		look["hair"] = "short" if not female else "ponytail"   # spiky hair doesn't fit under a cap
 	return look
 
 
@@ -167,6 +255,9 @@ func build_look(look: Dictionary) -> void:
 		s *= 0.93
 	elif age == "old":
 		s *= 0.95
+	elif age == "kid":
+		s *= 0.64
+	_stoop = 0.2 if age == "old" else 0.0
 	scale = Vector3(s, s, s)
 	_female = female
 	_time_offset = randf() * 100.0
@@ -180,6 +271,8 @@ func build_look(look: Dictionary) -> void:
 	_head = Node3D.new()
 	_head.name = "Head"
 	_head.position = Vector3(0, 0.62, 0)
+	if age == "kid":
+		_head.scale = Vector3.ONE * 1.22   # kids: bigger head for their size
 	_upper.add_child(_head)
 
 	var heavy := build_type == "heavy"
@@ -190,22 +283,28 @@ func build_look(look: Dictionary) -> void:
 	var top_mat := _cloth(top_col, top)
 	var bot_mat := _cloth(bot_col, bottom)
 	var skin_mat := _skin(skin)
+	var rider := top == "rider_jacket"
+	var torso_mat: Material = _rider_mat("torso", top_col) if rider else top_mat
+	var torso_scale := Vector3(0.94, 1, 0.94) if build_type == "slim" else Vector3.ONE
 
 	# --- Legs (hip pivot -> thigh, knee pivot -> shin, shoe) ---
-	var legs_covered := bottom in ["jeans", "pants"]
+	var legs_covered := bottom in ["jeans", "pants", "cargo"]
+	var baggy := bottom == "cargo"
 	for side: float in [-1.0, 1.0]:
 		var hip := Node3D.new()
 		hip.name = "LegL" if side < 0 else "LegR"
 		hip.position = Vector3(side * hip_w, HIP_Y, 0)
 		_body.add_child(hip)
-		_kit_part(hip, "thigh", bot_mat if legs_covered else skin_mat, Vector3.ZERO, limb_scale)
+		_kit_part(hip, "thigh_baggy" if baggy else "thigh", bot_mat if legs_covered else skin_mat, Vector3.ZERO, limb_scale)
+		if baggy:
+			_kit_part(hip, "cargo_pocket_l" if side < 0 else "cargo_pocket", bot_mat, Vector3.ZERO, limb_scale)
 		if bottom == "shorts":
 			_kit_part(hip, "shorts_leg", bot_mat, Vector3.ZERO, limb_scale)
 		var knee := Node3D.new()
 		knee.name = "Shin"
 		knee.position = Vector3(0, -THIGH, 0)
 		hip.add_child(knee)
-		_kit_part(knee, "shin", bot_mat if legs_covered else skin_mat, Vector3.ZERO, limb_scale)
+		_kit_part(knee, "shin_baggy" if baggy else "shin", bot_mat if legs_covered else skin_mat, Vector3.ZERO, limb_scale)
 		var slippers: bool = look.get("shoes", "") == "slippers" or (bottom == "shorts" and look.get("shoes", "") == "")
 		_kit_part(knee, "slipper" if slippers else "sneaker",
 			_shoe_mat(look.get("shoe_color", Color("#2b2b2b")), slippers), Vector3(0, -SHIN + 0.04, 0))
@@ -224,8 +323,11 @@ func build_look(look: Dictionary) -> void:
 			Vector3(1.08, 1, 1.08) if heavy else Vector3.ONE)
 
 	# --- Torso ---
-	_kit_part(_upper, "torso_" + tag, top_mat, Vector3.ZERO,
-		Vector3(0.94, 1, 0.94) if build_type == "slim" else Vector3.ONE)
+	_kit_part(_upper, "torso_" + tag, torso_mat, Vector3.ZERO, torso_scale)
+	if top in ["rider_jacket", "hoodie"]:
+		_kit_part(_upper, "hood", _cloth(look.get("hood_color", top_col.darkened(0.15)), "tee"), Vector3.ZERO, torso_scale)
+	if look.has("backpack"):
+		_kit_part(_upper, "backpack", _cloth(look["backpack"], "bag"), Vector3.ZERO, torso_scale)
 	if top == "jacket":
 		_part(_upper, _tapered(shoulder + 0.01, 0.16, 0.05, 10), LowPoly.mat(Color("#f0f0e8")),
 			Vector3(0, 0.22, 0), Vector3(1, 1, 0.72))   # reflective stripe
@@ -242,24 +344,36 @@ func build_look(look: Dictionary) -> void:
 	var style: String = look.get("hair", "short")
 	if style != "bald":
 		_kit_part(_hair, "hair_" + style, _hair_material(hair_col), head_pos)
+	if look.has("cap"):
+		_kit_part(_hair, "cap", _cloth(look["cap"], "tee"), head_pos)
 
 	# --- Arms (shoulder pivot -> upper arm, elbow pivot -> forearm, fist) ---
-	var long_sleeve := top in ["longsleeve", "jacket"]
+	var long_sleeve := top in ["longsleeve", "jacket", "rider_jacket", "hoodie"]
+	var gloves: Color = look.get("gloves", Color(0, 0, 0, 0))
+	var hand_mat: Material = _glove_mat(gloves, skin) if gloves.a > 0.0 else skin_mat
 	var sleeve: String = {"tshirt": "sleeve_short", "polo": "sleeve_short", "dress": "sleeve_cap"}.get(top, "")
 	for side: float in [-1.0, 1.0]:
 		var sh := Node3D.new()
 		sh.name = "ArmL" if side < 0 else "ArmR"
 		sh.position = Vector3(side * shoulder, 0.5, 0)
 		_upper.add_child(sh)
-		_kit_part(sh, "upper_arm", top_mat if long_sleeve else skin_mat, Vector3.ZERO, limb_scale)
+		var arm_mat: Material = top_mat if long_sleeve else skin_mat
+		if rider:
+			arm_mat = _rider_mat("arm_flag" if side > 0 else "arm", top_col)   # flag patch on the right sleeve
+		_kit_part(sh, "upper_arm", arm_mat, Vector3.ZERO, limb_scale)
 		if sleeve != "":
 			_kit_part(sh, sleeve, top_mat, Vector3.ZERO, limb_scale)
 		var elbow := Node3D.new()
 		elbow.name = "Forearm"
 		elbow.position = Vector3(0, -UPPER_ARM, 0)
 		sh.add_child(elbow)
-		_kit_part(elbow, "forearm", top_mat if long_sleeve else skin_mat, Vector3.ZERO, limb_scale)
-		_kit_part(elbow, "fist_l" if side < 0 else "fist", skin_mat, Vector3(0, -FOREARM, 0))   # thumbs on the inside
+		_kit_part(elbow, "forearm", _rider_mat("forearm", top_col) if rider else (top_mat if long_sleeve else skin_mat),
+			Vector3.ZERO, limb_scale)
+		_kit_part(elbow, "fist_l" if side < 0 else "fist", hand_mat, Vector3(0, -FOREARM, 0))   # thumbs on the inside
+		if gloves.a > 0.0:
+			_kit_part(elbow, "glove_cuff", LowPoly.mat(gloves), Vector3(0, -FOREARM + 0.035, 0), limb_scale)
+		if side > 0 and look.get("cane", false):
+			_kit_part(elbow, "cane", LowPoly.mat(Color("#6b4a2b")), Vector3(0, -FOREARM - 0.05, 0.02))
 		if side < 0:
 			arm_l = sh
 			forearm_l = elbow
@@ -278,6 +392,255 @@ func build_look(look: Dictionary) -> void:
 	set_helmet(helmet.a > 0.0)
 	pose_stand()
 	_merge_parts()
+	if str(look.get("model", "")) != "":
+		_attach_skin(str(look["model"]))
+
+
+# --- Detailed skinned model ----------------------------------------------------------
+# The rigged .glb (made from the character sheet with an image-to-3D tool) has a human
+# skeleton. We keep this character's simple joints (they run every animation) but hide their
+# meshes, and each frame turn the model's bones to match the joints. So walking, riding,
+# fighting and waving all work on the detailed model without new animation code.
+
+const SKIN_BONES := {
+	# bone name -> which joint drives it ("" = follows its parent bone)
+	"Hips": "body", "Spine02": "upper", "Spine01": "upper", "Spine": "upper", "neck": "upper",
+	"Head": "head", "LeftShoulder": "upper", "RightShoulder": "upper",
+	"LeftArm": "arm_l", "LeftForeArm": "forearm_l", "LeftHand": "forearm_l",
+	"RightArm": "arm_r", "RightForeArm": "forearm_r", "RightHand": "forearm_r",
+	"LeftUpLeg": "leg_l", "LeftLeg": "shin_l", "LeftFoot": "shin_l",
+	"RightUpLeg": "leg_r", "RightLeg": "shin_r", "RightFoot": "shin_r",
+}
+# limb bones whose rest pose (A-pose) is turned to hang straight down like our joints' rest:
+# bone -> [from bone, to bone] (the direction that should point down)
+const SKIN_ALIGN := {
+	"LeftArm": ["LeftArm", "LeftForeArm"], "LeftForeArm": ["LeftForeArm", "LeftHand"], "LeftHand": ["LeftForeArm", "LeftHand"],
+	"RightArm": ["RightArm", "RightForeArm"], "RightForeArm": ["RightForeArm", "RightHand"], "RightHand": ["RightForeArm", "RightHand"],
+	"LeftUpLeg": ["LeftUpLeg", "LeftLeg"], "LeftLeg": ["LeftLeg", "LeftFoot"], "LeftFoot": ["LeftLeg", "LeftFoot"],
+	"RightUpLeg": ["RightUpLeg", "RightLeg"], "RightLeg": ["RightLeg", "RightFoot"], "RightFoot": ["RightLeg", "RightFoot"],
+}
+
+
+func _attach_skin(path: String) -> void:
+	var scene := load(path) as PackedScene
+	if scene == null:
+		push_warning("Character model missing: " + path)
+		return
+	# hide the simple body (the joints keep animating), keep the helmet
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		if not _helmet.is_ancestor_of(mi):
+			(mi as MeshInstance3D).visible = false
+	_skin_root = scene.instantiate() as Node3D
+	_skin_root.name = "Skin"
+	_skin_root.rotation.y = PI   # the model faces +Z, our characters face -Z
+	add_child(_skin_root)
+	for ap in _skin_root.find_children("*", "AnimationPlayer", true, false):
+		ap.get_parent().remove_child(ap)   # we pose the bones ourselves
+		ap.free()
+	for mi in _skin_root.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if lod_distance > 0.0:
+			m.visibility_range_end = lod_distance
+			m.visibility_range_end_margin = 10.0
+		if not cast_shadows:
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_bind_skin()
+	# the helmet sits on the model's head bone
+	var att := BoneAttachment3D.new()
+	att.name = "HelmetMount"
+	_skel.add_child(att)
+	att.bone_name = "Head"
+	_helmet.get_parent().remove_child(_helmet)
+	att.add_child(_helmet)
+	var k := 1.0 / maxf(_rel(_skel).basis.get_scale().y, 0.0001)   # the skeleton may be in centimeters
+	# image-to-3D models (with a "head_end" bone) vs. our code-built NPCs: the head sits differently
+	var generated := _skel.find_bone("head_end") >= 0
+	var hy: float = 0.055 if generated else 0.105
+	var hs: float = 1.22 if generated else 1.12
+	_helmet.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * hs * k), Vector3(0, hy, 0.015) * k)
+	_sync_skin()
+
+
+## Find the skeleton and work out how each bone follows our joints.
+func _bind_skin() -> void:
+	_skel = _skin_root.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
+	var joints := {"body": _body, "upper": _upper, "head": _head, "arm_l": arm_l, "arm_r": arm_r,
+		"forearm_l": forearm_l, "forearm_r": forearm_r, "leg_l": leg_l, "leg_r": leg_r,
+		"shin_l": shin_l, "shin_r": shin_r}
+	_rest_global.clear()
+	for i in _skel.get_bone_count():
+		_rest_global.append(_skel.get_bone_global_rest(i))
+	_bone_map.clear()
+	var spine_align := Basis.IDENTITY
+	var hb := _skel.find_bone("Hips")
+	var hd := _skel.find_bone("Head")
+	if hb >= 0 and hd >= 0:
+		var up: Vector3 = ((_rest_global[hd] as Transform3D).origin - (_rest_global[hb] as Transform3D).origin).normalized()
+		spine_align = Basis(Quaternion(up, Vector3.UP))
+	for i in _skel.get_bone_count():
+		var bname := _skel.get_bone_name(i)
+		var pivot: Node3D = joints.get(SKIN_BONES.get(bname, ""), null)
+		var align := Basis.IDENTITY
+		if SKIN_ALIGN.has(bname):
+			var pair: Array = SKIN_ALIGN[bname]
+			var a := _skel.find_bone(str(pair[0]))
+			var b := _skel.find_bone(str(pair[1]))
+			if a >= 0 and b >= 0:
+				var dir: Vector3 = ((_rest_global[b] as Transform3D).origin - (_rest_global[a] as Transform3D).origin).normalized()
+				align = Basis(Quaternion(dir, Vector3.DOWN))
+		if bname in ["Hips", "Spine02", "Spine01", "Spine", "neck", "Head", "LeftShoulder", "RightShoulder"]:
+			align = spine_align   # stand up straight (the model's rest pose leans back a little)
+		_bone_map.append([pivot, align])
+
+
+func _process(_delta: float) -> void:
+	if not is_visible_in_tree():
+		return
+	if _skel != null:
+		_sync_skin()
+	elif not hand_targets.is_empty() and is_inside_tree():
+		_reach_simple("l", arm_l, forearm_l)
+		_reach_simple("r", arm_r, forearm_r)
+
+
+## Simple body: turn the shoulder and elbow joints so the fist lands on the target.
+func _reach_simple(side: String, shoulder: Node3D, elbow: Node3D) -> void:
+	var target: Node3D = hand_targets.get(side, null)
+	if target == null:
+		return
+	var s := shoulder.global_position
+	var w := target.global_position
+	var k := global_transform.basis.get_scale().y
+	var l1 := UPPER_ARM * k
+	var l2 := (FOREARM + 0.07) * k   # to the middle of the fist
+	var to_w := w - s
+	var d := clampf(to_w.length(), 0.001, (l1 + l2) * 0.999)
+	var dir := to_w.normalized()
+	var a := (l1 * l1 - l2 * l2 + d * d) / (2.0 * d)
+	var h := sqrt(maxf(l1 * l1 - a * a, 0.0))
+	var out := (global_transform.basis.x * (-1.0 if side == "l" else 1.0)).normalized()
+	var pole := (-global_transform.basis.y * 0.7 + out * 0.6).normalized()
+	var bend := (pole - dir * pole.dot(dir)).normalized()
+	var e := s + dir * a + bend * h
+	var right := global_transform.basis.x.normalized()
+	shoulder.global_basis = _hang_toward(e - s, right, shoulder.global_basis.get_scale())
+	elbow.global_basis = _hang_toward((s + dir * d) - e, right, elbow.global_basis.get_scale())
+
+
+## A basis whose -Y (the way our limbs hang) points along `dir`; X stays close to `right`.
+static func _hang_toward(dir: Vector3, right: Vector3, scl: Vector3) -> Basis:
+	var y := -dir.normalized()
+	var x := (right - y * right.dot(y)).normalized()
+	if x.length() < 0.5:
+		x = Vector3.RIGHT
+	var z := x.cross(y)
+	return Basis(x, y, z).scaled(scl)
+
+
+## Two-bone reach (IK): when a hand has a target, the upper arm and forearm turn so the
+## hand lands on it, with the elbow bending down and out. Returns null for other bones.
+var _ik_cache := {}   # per side, the turns used this frame: {"upper": Quaternion, "fore": Quaternion}
+
+
+func _reach(i: int, t: Transform3D, desired: Array, parent: int) -> Variant:
+	if hand_targets.is_empty() or not is_inside_tree():
+		return null
+	var bname := _skel.get_bone_name(i)
+	var side := "l" if bname.begins_with("Left") else "r"
+	var target: Node3D = hand_targets.get(side, null)
+	if target == null or not bname in ["LeftArm", "RightArm", "LeftForeArm", "RightForeArm", "LeftHand", "RightHand"]:
+		return null
+	var pre := "Left" if side == "l" else "Right"
+	var rest: Transform3D = _rest_global[i]
+	if bname.ends_with("Hand"):
+		# the hand keeps the forearm's turn
+		var q: Quaternion = (_ik_cache.get(side, {}) as Dictionary).get("fore", Quaternion.IDENTITY)
+		return Transform3D(Basis(q) * rest.basis, t.origin)
+	var arm := _skel.find_bone(pre + "Arm")
+	var fore := _skel.find_bone(pre + "ForeArm")
+	var hand := _skel.find_bone(pre + "Hand")
+	var ra: Vector3 = (_rest_global[arm] as Transform3D).origin
+	var rf: Vector3 = (_rest_global[fore] as Transform3D).origin
+	var rh: Vector3 = (_rest_global[hand] as Transform3D).origin
+	var l1 := ra.distance_to(rf)
+	var l2 := rf.distance_to(rh)
+	if bname.ends_with("ForeArm"):
+		var q2: Quaternion = (_ik_cache.get(side, {}) as Dictionary).get("fore", Quaternion.IDENTITY)
+		return Transform3D(Basis(q2) * rest.basis, t.origin)
+	# upper arm: solve the whole arm now
+	var skel_global := global_transform * _rel(_skel)
+	var w: Vector3 = skel_global.affine_inverse() * target.global_position   # target in skeleton space
+	var s := t.origin
+	var to_w := w - s
+	var d := clampf(to_w.length(), 0.001, (l1 + l2) * 0.999)
+	var dir := to_w.normalized()
+	var a := (l1 * l1 - l2 * l2 + d * d) / (2.0 * d)
+	var h := sqrt(maxf(l1 * l1 - a * a, 0.0))
+	var out := Vector3(1.0 if (ra.x > 0.0) else -1.0, 0, 0)   # the arm's side in skeleton space
+	var pole := (Vector3.DOWN * 0.7 + out * 0.6).normalized()
+	var bend := (pole - dir * pole.dot(dir)).normalized()
+	var elbow := s + dir * a + bend * h
+	var hand_pos := s + dir * d
+	var q_up := Quaternion((rf - ra).normalized(), (elbow - s).normalized())
+	var q_fore := Quaternion((rh - rf).normalized(), (hand_pos - elbow).normalized())
+	_ik_cache[side] = {"upper": q_up, "fore": q_fore}
+	return Transform3D(Basis(q_up) * rest.basis, s)
+
+
+## True when this person uses a detailed skinned model.
+func has_skin() -> bool:
+	return _skel != null
+
+
+## A node's transform relative to this character (works before it's in the scene tree).
+func _rel(n: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	while n != null and n != self:
+		t = n.transform * t
+		n = n.get_parent() as Node3D
+	return t
+
+
+## Turn every bone to match our joints (all in the skeleton's space).
+func _sync_skin() -> void:
+	# the skeleton can sit under extra nodes (the importer's "Armature"), so measure it for real
+	var skel_xf := _rel(_skel)
+	var model_from_skel := skel_xf.basis.orthonormalized()
+	var skel_from_model := model_from_skel.inverse()
+	var skel_scale := skel_xf.basis.get_scale().y
+	var desired: Array[Transform3D] = []
+	desired.resize(_skel.get_bone_count())
+	for i in _skel.get_bone_count():
+		var parent := _skel.get_bone_parent(i)
+		var rest: Transform3D = _rest_global[i]
+		var entry: Array = _bone_map[i]
+		var pivot: Node3D = entry[0]
+		var t: Transform3D
+		if pivot != null:
+			var rm := _rel(pivot).basis.orthonormalized()
+			var rs := skel_from_model * rm * model_from_skel
+			t = Transform3D(rs * (entry[1] as Basis) * rest.basis, Vector3.ZERO)
+			if parent >= 0:
+				# keep the bone where its parent puts it (rest offset), only the turn changes
+				var rest_local: Transform3D = _rest_global[parent].affine_inverse() * rest
+				t.origin = (desired[parent] * rest_local).origin
+			else:
+				var hip := Vector3(0, HIP_Y, 0)
+				var lift := skel_from_model * (_body.transform * hip - hip) / maxf(skel_scale, 0.0001)
+				t.origin = rest.origin + lift
+		elif parent >= 0:
+			t = desired[parent] * (_rest_global[parent].affine_inverse() * rest)
+		else:
+			t = rest
+		var reach: Variant = _reach(i, t, desired, parent)
+		if reach != null:
+			t = reach
+		desired[i] = t
+		var local := t if parent < 0 else desired[parent].affine_inverse() * t
+		_skel.set_bone_pose_rotation(i, local.basis.orthonormalized().get_rotation_quaternion())
+		_skel.set_bone_pose_position(i, local.origin)
+		if _skel.get_bone_name(i) == "Head":
+			_skel.set_bone_pose_scale(i, Vector3.ONE * (0.001 if _first_person else 1.0))
 
 
 ## Performance: bake the ~40 little pieces into a few meshes (one per moving part).
@@ -295,12 +658,12 @@ func _merge_parts() -> void:
 ## Performance: a copy of a ready-made person (built once, then copied in a blink).
 ## `variant` picks one of a few looks per kind. Templates are built the first time.
 static func make(rng: RandomNumberGenerator, female: bool, kind: String, lod: float, shadows: bool) -> CharacterModel:
-	var key := "%s_%s_%d_%d_%s" % [kind, female, rng.randi() % 4, int(lod), shadows]
+	var key := "%s_%s_%d_%d_%s" % [kind, female, rng.randi() % 12, int(lod), shadows]
 	if not _templates.has(key):
 		var t := CharacterModel.new()
 		t.lod_distance = lod
 		t.cast_shadows = shadows
-		t.build_look(random_look(rng, female, kind))
+		t.build_look(random_look(rng, female, kind, kind == ""))
 		_templates[key] = t
 	var c: CharacterModel = (_templates[key] as CharacterModel).duplicate()
 	c._rebind()
@@ -350,10 +713,15 @@ func _rebind() -> void:
 	arm_r = _upper.get_node("ArmR")
 	forearm_l = arm_l.get_node("Forearm")
 	forearm_r = arm_r.get_node("Forearm")
-	_helmet = _head.get_node("Helmet")
+	_helmet = find_child("Helmet", true, false)   # (on the model's head bone when it has one)
 	_hair = _head.get_node("Hair")
 	_look = get_meta("look", {})
 	_female = _look.get("body", "male") == "female"
+	_skel = null
+	if has_node("Skin"):   # a copy of a detailed model: hook it up again
+		_skin_root = get_node("Skin")
+		_bind_skin()
+	_stoop = 0.2 if _look.get("age", "adult") == "old" else 0.0
 	_time_offset = randf() * 100.0
 
 
@@ -363,8 +731,9 @@ func get_look() -> Dictionary:
 
 ## Put the helmet on or take it off. `pop` = little drop-on animation.
 func set_helmet(on: bool, pop: bool = false) -> void:
-	_helmet.visible = on
-	_hair.visible = not on
+	_helmet_on = on
+	_helmet.visible = on and not _first_person
+	_hair.visible = not on and _skel == null
 	if on and pop:
 		_helmet.scale = Vector3.ONE * 1.5
 		create_tween().tween_property(_helmet, "scale", Vector3.ONE, 0.25) \
@@ -372,7 +741,103 @@ func set_helmet(on: bool, pop: bool = false) -> void:
 
 
 func has_helmet() -> bool:
-	return _helmet.visible
+	return _helmet_on
+
+
+## First person: we look out of this head, so hide it (head, hair, helmet) but keep the body,
+## arms and hands visible (you see your hands on the handlebar and your knees below).
+func set_first_person(on: bool) -> void:
+	_first_person = on
+	_helmet.visible = _helmet_on and not on
+	if _skel == null:
+		_head.visible = not on
+	else:
+		_sync_skin()
+
+
+## Where the eyes are (world space), for the first-person camera.
+func get_eye_position() -> Vector3:
+	if _skel != null:
+		var hi := _skel.find_bone("Head")
+		var head_xf := _skel.global_transform * _skel.get_bone_global_pose(hi)
+		return global_transform * (global_transform.affine_inverse() * head_xf.origin + Vector3(0, 0.1, -0.06) * scale.y)
+	return _head.global_transform * Vector3(0, 0.1, -0.08)
+
+
+# --- Ragdoll (see scenes/common/ragdoll.gd) ----------------------------------------
+
+var _ragdoll: Ragdoll
+
+
+## Go limp and get thrown: `velocity` moves the whole body, `pitch` tumbles the upper body.
+func start_ragdoll(velocity: Vector3, pitch: Vector3 = Vector3.ZERO) -> void:
+	if _ragdoll != null or not is_inside_tree():
+		return
+	_ragdoll = Ragdoll.new()
+	add_child(_ragdoll)
+	_ragdoll.begin(self, velocity, pitch)
+
+
+func is_ragdoll() -> bool:
+	return _ragdoll != null
+
+
+## Where the hips are on the ground (to move the owner there before getting up).
+func ragdoll_ground_position() -> Vector3:
+	if _ragdoll == null:
+		return global_position
+	var p := _ragdoll.pelvis_position()
+	return Vector3(p.x, _ragdoll.ground_height(), p.z)
+
+
+## Back to normal, standing.
+func stop_ragdoll() -> void:
+	if _ragdoll == null:
+		return
+	_ragdoll.queue_free()
+	_ragdoll = null
+	_body.transform = Transform3D.IDENTITY
+	for joint: Node3D in [leg_l, leg_r, shin_l, shin_r, arm_l, arm_r, forearm_l, forearm_r, _upper, _head]:
+		joint.rotation = Vector3.ZERO
+	pose_stand()
+
+
+## The joints as world points (the ragdoll starts from the current pose).
+func ragdoll_points() -> Dictionary:
+	var k := global_transform.basis.get_scale().y
+	var sh_l := arm_l.global_position
+	var sh_r := arm_r.global_position
+	return {
+		"pelvis": _upper.global_position, "chest": (sh_l + sh_r) * 0.5,
+		"head": _head.global_position + _head.global_transform.basis.y.normalized() * 0.1 * k,
+		"sh_l": sh_l, "sh_r": sh_r, "el_l": forearm_l.global_position, "el_r": forearm_r.global_position,
+		"hand_l": forearm_l.global_transform * Vector3(0, -FOREARM, 0),
+		"hand_r": forearm_r.global_transform * Vector3(0, -FOREARM, 0),
+		"hip_l": leg_l.global_position, "hip_r": leg_r.global_position,
+		"knee_l": shin_l.global_position, "knee_r": shin_r.global_position,
+		"foot_l": shin_l.global_transform * Vector3(0, -SHIN, 0), "foot_r": shin_r.global_transform * Vector3(0, -SHIN, 0),
+	}
+
+
+## Turn the joints so the body matches the ragdoll's points.
+func ragdoll_apply(p: Dictionary) -> void:
+	var k := global_transform.basis.get_scale().y
+	var up: Vector3 = ((p["chest"] as Vector3) - (p["pelvis"] as Vector3)).normalized()
+	var right: Vector3 = ((p["sh_r"] as Vector3) - (p["sh_l"] as Vector3))
+	right = (right - up * right.dot(up)).normalized()
+	var basis := Basis(right, up, right.cross(up))
+	var size := Vector3.ONE * k
+	_upper.rotation = Vector3.ZERO
+	_body.global_transform = Transform3D(basis.scaled_local(size), (p["pelvis"] as Vector3) - up * HIP_Y * k)
+	var neck_up: Vector3 = ((p["head"] as Vector3) - (p["chest"] as Vector3)).normalized()
+	var head_x := (right - neck_up * right.dot(neck_up)).normalized()
+	_head.global_basis = Basis(head_x, neck_up, head_x.cross(neck_up)).scaled_local(_head.global_basis.get_scale())
+	for limb: Array in [[arm_l, "sh_l", "el_l"], [arm_r, "sh_r", "el_r"], [forearm_l, "el_l", "hand_l"],
+			[forearm_r, "el_r", "hand_r"], [leg_l, "hip_l", "knee_l"], [leg_r, "hip_r", "knee_r"],
+			[shin_l, "knee_l", "foot_l"], [shin_r, "knee_r", "foot_r"]]:
+		var joint: Node3D = limb[0]
+		var dir: Vector3 = (p[limb[2]] as Vector3) - (p[limb[1]] as Vector3)
+		joint.global_basis = _hang_toward(dir, right, joint.global_basis.get_scale())
 
 
 # --- Animation (original, made in code) ---------------------------------------------
@@ -417,7 +882,7 @@ func walk(phase: float, amount: float) -> void:
 	var step := absf(cos(phase))
 	_body.position = Vector3(0, -(0.012 + 0.03 * run) * w * (1.0 - step), 0)
 	_body.rotation = Vector3(0, sin(phase) * 0.06 * w, swing * (0.035 if not _female else 0.06) * w)
-	_upper.rotation = Vector3(0.03 + 0.2 * run, -sin(phase) * (0.12 + 0.06 * run) * w, -swing * 0.02 * w)
+	_upper.rotation = Vector3(0.03 + 0.2 * run + _stoop, -sin(phase) * (0.12 + 0.06 * run) * w, -swing * 0.02 * w)
 	# the head stays steady (looks where it's going)
 	_head.rotation = Vector3(-0.1 * run, -_upper.rotation.y - _body.rotation.y, 0)
 
@@ -433,7 +898,7 @@ func _idle() -> void:
 	shin_l.rotation = Vector3(-maxf(0.0, -shift) * 0.12, 0, 0)   # the relaxed leg bends a little
 	shin_r.rotation = Vector3(-maxf(0.0, shift) * 0.12, 0, 0)
 	var breathe := sin(t * 1.7)
-	_upper.rotation = Vector3(0.02 + breathe * 0.015, 0, -shift * 0.025)
+	_upper.rotation = Vector3(0.02 + breathe * 0.015 + _stoop, 0, -shift * 0.025)
 	arm_l.rotation = Vector3(0.04, 0, -0.1 - breathe * 0.02)
 	arm_r.rotation = Vector3(0.04, 0, 0.1 + breathe * 0.02)
 	forearm_l.rotation = Vector3(0.18, 0, 0)
@@ -627,7 +1092,8 @@ static func _tex(img: Image) -> ImageTexture:
 ## Fabric for a clothing type ("tshirt", "polo", "jeans", ...) in any color.
 static func _cloth(color: Color, kind: String = "tshirt") -> StandardMaterial3D:
 	var tex_kind: String = {"jeans": "jeans", "shorts": "jeans", "pants": "pants", "skirt": "pants",
-		"polo": "polo", "longsleeve": "shirt", "jacket": "jacket", "dress": "dress"}.get(kind, "tee")
+		"polo": "polo", "longsleeve": "shirt", "jacket": "jacket", "dress": "dress", "cargo": "cargo",
+		"hoodie": "hoodie", "bag": "bag"}.get(kind, "tee")
 	var key := "cloth_%s_%s" % [tex_kind, color.to_html()]
 	if not _mat_cache.has(key):
 		var m := StandardMaterial3D.new()
@@ -746,9 +1212,141 @@ static func _cloth_texture(kind: String) -> ImageTexture:
 				img.set_pixel(front, y, Color(1.0, 1.0, 1.0))   # front crease (catches light)
 			for x in n:
 				img.set_pixel(x, 0, Color(0.7, 0.7, 0.7))
+		"cargo":
+			for side: int in [-1, 1]:
+				var sx := (front + side * 16 + n) % n
+				for y in n:
+					img.set_pixel(sx, y, Color(0.7, 0.7, 0.7))           # side seams
+					if y % 4 == 1:
+						img.set_pixel((sx + side + n) % n, y, Color(0.98, 0.98, 0.98))   # stitches
+			for x in n:
+				img.set_pixel(x, 0, Color(0.68, 0.68, 0.68))   # waistband
+				img.set_pixel(x, 1, Color(0.78, 0.78, 0.78))
+				if x % 7 == 3:
+					img.set_pixel(x, 30, Color(0.78, 0.78, 0.78))   # knee stitching
+			for y in range(2, 10):
+				img.set_pixel(front, y, Color(0.7, 0.7, 0.7))   # fly
+		"hoodie":
+			for y in range(38, 52):
+				for x in range(front - 10, front + 11):
+					var edge := y == 38 or x == front - 10 or x == front + 10
+					if edge:
+						img.set_pixel(x, y, Color(0.72, 0.72, 0.72))   # front pocket
+			for y in range(1, 11):
+				img.set_pixel(front - 3, y, Color(1, 1, 1))   # drawstrings
+				img.set_pixel(front + 3, y, Color(1, 1, 1))
+			for x in n:
+				for y in range(n - 5, n):
+					img.set_pixel(x, y, Color(0.8, 0.8, 0.8) if x % 2 == 0 else Color(0.72, 0.72, 0.72))   # ribbed hem
+		"bag":
+			for x in n:
+				img.set_pixel(x, 18, Color(0.55, 0.55, 0.55))   # zipper
+				img.set_pixel(x, 19, Color(0.95, 0.95, 0.95) if x % 3 == 0 else Color(0.6, 0.6, 0.6))
+				img.set_pixel(x, 40, Color(0.7, 0.7, 0.7))
 	var tex := _tex(img)
 	_mat_cache[key] = tex
 	return tex
+
+
+## Rider jacket pieces, painted in full color (white stripe and logo can't come from tinting):
+## "torso" (zipper, open collar, chest logo, reflective stripe, pockets, ribbed hem),
+## "arm" / "arm_flag" (stripe; the left sleeve has the flag patch), "forearm" (ribbed cuff).
+static func _rider_mat(part: String, color: Color) -> StandardMaterial3D:
+	var key := "rider_%s_%s" % [part, color.to_html()]
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key)
+	var front := n / 2
+	var dark := Color("#2b2d31")
+	var stripe := Color("#c9ccc8")
+	var shine := Color("#eef0ec")
+	for y in n:
+		for x in n:
+			img.set_pixel(x, y, color.darkened(rng.randf_range(-0.03, 0.05)))
+	for f in 8:   # soft fold shadows
+		var fx := rng.randi_range(0, n - 1)
+		var fy := rng.randi_range(6, n - 10)
+		for k in rng.randi_range(4, 8):
+			var px := (fx + k) % n
+			var py := clampi(fy + k / 2, 0, n - 1)
+			img.set_pixel(px, py, img.get_pixel(px, py).darkened(0.14))
+	match part:
+		"torso":
+			for y in range(24, 28):   # reflective stripe all the way around
+				for x in n:
+					img.set_pixel(x, y, shine if y == 25 else stripe)
+			for y in range(0, 9):     # open collar: dark hoodie, a little cream shirt in the middle
+				var hw := (9 - y) / 2 + 2
+				for x in range(front - hw, front + hw + 1):
+					img.set_pixel(x, y, Color("#e6e0d2") if absi(x - front) < hw - 2 and y < 5 else Color("#2f3035"))
+			for y in range(10, n - 6):   # zipper
+				img.set_pixel(front, y, Color("#3a3a3a") if y % 2 == 0 else Color("#8a8a8a"))
+			# bike logo on the left chest (white)
+			var logo := ["......#.", ".###.##.", "..#####.", "###..###", "#.#..#.#", "###..###"]
+			for r in logo.size():
+				for c in (logo[r] as String).length():
+					if (logo[r] as String)[c] == "#":
+						img.set_pixel(front - 14 + c, 13 + r, Color("#f2f2ee"))
+			for side: int in [-1, 1]:   # slanted hand pockets
+				for k in 6:
+					img.set_pixel(front + side * (9 + k), 42 + k / 2, color.darkened(0.35))
+			for y in range(n - 6, n):   # ribbed hem
+				for x in n:
+					img.set_pixel(x, y, dark.lightened(0.06) if x % 2 == 0 else dark)
+		"arm", "arm_flag":
+			for y in range(40, 44):
+				for x in n:
+					img.set_pixel(x, y, shine if y == 41 else stripe)
+			if part == "arm_flag":
+				# flag patch on the outside of the sleeve: blue over red, white triangle, gold sun
+				var fx0 := 40   # the outside of the right arm is around x = 48
+				for y in range(10, 22):
+					for x in range(fx0, fx0 + 17):
+						img.set_pixel(x, y, Color("#0038a8") if y < 16 else Color("#ce1126"))
+					var tri := 7 - absi(int(float(y) - 15.5))
+					for x in range(fx0, fx0 + tri):
+						img.set_pixel(x, y, Color("#f4f4f0"))
+				for p: Vector2i in [Vector2i(1, 15), Vector2i(2, 15), Vector2i(1, 16), Vector2i(2, 16)]:
+					img.set_pixel(fx0 + p.x, p.y, Color("#fcd116"))
+		"forearm":
+			for y in range(n - 9, n):
+				for x in n:
+					img.set_pixel(x, y, dark.lightened(0.06) if x % 2 == 0 else dark)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex(img)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.roughness = 0.85
+	_mat_cache[key] = m
+	return m
+
+
+## Fingerless gloves: dark glove with a knuckle pad; the finger ends show the skin.
+static func _glove_mat(glove: Color, skin: Color) -> StandardMaterial3D:
+	var key := "glove_%s_%s" % [glove.to_html(), skin.to_html()]
+	if _mat_cache.has(key):
+		return _mat_cache[key]
+	var n := 32
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var c := glove
+			var fwd := absi(x - n / 2) < 9                 # front half of the fist (fingers)
+			if y > 21 and fwd:
+				c = skin                                     # finger ends
+			elif y >= 15 and y <= 18 and fwd:
+				c = glove.lightened(0.12)                    # knuckle pad
+			elif y < 3:
+				c = glove.darkened(0.2)                      # wrist strap
+			img.set_pixel(x, y, c)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex(img)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	m.roughness = 0.7
+	_mat_cache[key] = m
+	return m
 
 
 static func _hair_texture() -> ImageTexture:
@@ -791,7 +1389,8 @@ static func _face_material(skin: Color, hair: Color, female: bool, look: Diction
 	var facial: String = look.get("facial", "")
 	var glasses: bool = look.get("glasses", false)
 	var old: bool = look.get("age", "adult") == "old"
-	var key := "%s_%s_%s_%s_%s_%s" % [skin.to_html(), hair.to_html(), female, facial, glasses, old]
+	var bandage: bool = look.get("bandage", false)
+	var key := "%s_%s_%s_%s_%s_%s_%s" % [skin.to_html(), hair.to_html(), female, facial, glasses, old, bandage]
 	if _face_cache.has(key):
 		return _face_cache[key]
 	var w := 192
@@ -905,6 +1504,14 @@ static func _face_material(skin: Color, hair: Color, female: bool, look: Diction
 				img.set_pixel(cx + side * (10 + dx), 27, frame)   # arms back to the ears
 		for dx in range(-4, 5):
 			img.set_pixel(cx + dx, 27, frame)
+	# a bandage on the cheek (the rider's)
+	if bandage:
+		for y in range(33, 40):
+			for dx in range(13, 19):
+				var edge := y == 33 or y == 39 or dx == 13 or dx == 18
+				img.set_pixel(cx + dx, y, Color("#d2b48a") if edge else Color("#ecd5b0"))
+		img.set_pixel(cx + 15, 36, Color("#c9a77a"))
+		img.set_pixel(cx + 16, 36, Color("#c9a77a"))
 	# ears (at the sides)
 	for side: int in [-1, 1]:
 		var ex := cx + side * 48

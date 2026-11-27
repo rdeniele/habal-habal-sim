@@ -20,6 +20,7 @@ const BASE_TURN_RATE := 1.9      # radians/second at handling 1.0
 const CRASH_SPEED := 8.5         # m/s (~30 km/h) head-on hit that throws you off
 const MAX_LEAN := 0.5            # radians (~29 degrees)
 const WHEEL_RADIUS := 0.27
+const MODEL_PATH := "res://assets/vehicles/scooter.glb"
 const MIX_RATE := 22050.0        # placeholder engine/horn sound sample rate
 const PUSH_SPEED := 1.6          # m/s when pushing the motor with no gas
 const PASSENGER_SEAT := Vector3(0, -0.07, 0.62)
@@ -84,7 +85,9 @@ func _ready() -> void:
 	add_child(shape)
 
 	_paint = StandardMaterial3D.new()
-	_paint.roughness = 0.5
+	_paint.roughness = 0.32
+	_paint.metallic = 0.2
+	_paint.metallic_specular = 0.6
 	_build_model()
 	_setup_audio()
 	if motor_id == "":
@@ -126,13 +129,15 @@ func place(pos: Vector3, new_heading: float) -> void:
 
 func set_ridden(on: bool) -> void:
 	is_ridden = on
-	_rider.visible = on and not _fp_hidden
+	_rider.visible = on
 	if on:
 		is_fallen = false   # picking the motor back up
 
 
 ## Where the rider's eyes are (for the first-person camera).
 func get_head_position() -> Vector3:
+	if is_ridden and _rider != null:
+		return _rider.get_eye_position()   # the rider's real eyes (the body shows in first person)
 	return _lean_pivot.global_transform * Vector3(0, 1.56, 0.24)
 
 
@@ -141,9 +146,11 @@ func get_lean() -> float:
 
 
 ## First-person camera: hide the rider body so we look out from the helmet.
+## First person: keep the rider's body (hands on the grips, arms, knees), hide only the head.
 func set_fp_hidden(hidden: bool) -> void:
 	_fp_hidden = hidden
-	_rider.visible = is_ridden and not hidden
+	_rider.visible = is_ridden
+	_rider.set_first_person(hidden)
 
 
 ## Side mirrors only render while someone looks at them (first person). Call every frame.
@@ -152,12 +159,11 @@ func set_mirrors_active(on: bool) -> void:
 
 
 ## Two side mirrors on the handlebar. Each has a little camera looking back; its picture
-## is shown (flipped like a real mirror) on the mirror glass.
+## is shown (flipped like a real mirror) on the mirror glass. The model has a "MirrorL" and
+## "MirrorR" spot on the back of each mirror housing, already turned to face the rider.
 func _build_mirrors() -> void:
 	for side: float in [-1.0, 1.0]:
-		LowPoly.box(_fork, Vector3(0.025, 0.24, 0.025), Color("#151515"), Vector3(side * 0.31, 1.13, 0.22))   # stalk
-		var housing := LowPoly.box(_fork, Vector3(0.16, 0.11, 0.035), Color("#151515"), Vector3(side * 0.34, 1.27, 0.2))
-		housing.rotation.y = side * 0.25
+		var spot := _fork.find_child("MirrorL" if side < 0.0 else "MirrorR", true, false) as Node3D
 		var sv := SubViewport.new()
 		sv.size = Vector2i(192, 128)
 		sv.render_target_update_mode = SubViewport.UPDATE_DISABLED
@@ -168,7 +174,7 @@ func _build_mirrors() -> void:
 		sv.add_child(cam)
 		var glass := MeshInstance3D.new()
 		var quad := QuadMesh.new()
-		quad.size = Vector2(0.145, 0.095)
+		quad.size = Vector2(0.13, 0.085)
 		glass.mesh = quad
 		var mat := StandardMaterial3D.new()
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -176,9 +182,7 @@ func _build_mirrors() -> void:
 		mat.uv1_scale = Vector3(-1, 1, 1)   # mirror image (flip left/right)
 		mat.uv1_offset = Vector3(1, 0, 0)
 		glass.material_override = mat
-		glass.position = Vector3(side * 0.34, 1.27, 0.22)
-		glass.rotation.y = side * 0.25   # quad faces +Z = toward the rider
-		_fork.add_child(glass)
+		spot.add_child(glass)   # quad faces +Z = toward the rider
 		_mirrors.append({"viewport": sv, "camera": cam, "glass": glass, "side": side})
 
 
@@ -252,6 +256,11 @@ func get_top_speed() -> float:
 
 func get_speed_kmh() -> float:
 	return absf(speed) * 3.6
+
+
+## How far the gas left will take you (in-game fuel use).
+func get_range_km() -> float:
+	return fuel_liters * float(stats.get("km_per_liter", 50.0)) / Economy.FUEL_USE_MULTIPLIER
 
 
 func get_fuel_ratio() -> float:
@@ -398,71 +407,103 @@ func _update_visuals(delta: float, steer: float, top: float) -> void:
 	_rear_wheel.rotation.x -= spin
 
 
-# --- Model (placeholder scooter built from boxes) ----------------------------
+# --- Model (made in Blender: tools/blender/make_scooter.py) -------------------
 
 func _build_model() -> void:
 	_lean_pivot = Node3D.new()
 	_lean_pivot.name = "LeanPivot"
 	add_child(_lean_pivot)
-	var dark := Color("#2b2d31")
-	var black := Color("#151515")
 
-	_rear_wheel = _make_wheel(_lean_pivot, Vector3(0, WHEEL_RADIUS, 0.62))
-
-	# Body
-	LowPoly.box(_lean_pivot, Vector3(0.36, 0.08, 0.6), dark, Vector3(0, 0.33, -0.05))             # footboard
-	LowPoly.box(_lean_pivot, Vector3(0.4, 0.36, 0.78), Color.WHITE, Vector3(0, 0.56, 0.36), _paint) # rear body
-	LowPoly.box(_lean_pivot, Vector3(0.34, 0.1, 0.7), black, Vector3(0, 0.79, 0.32))              # seat
-	LowPoly.box(_lean_pivot, Vector3(0.42, 0.62, 0.12), Color.WHITE, Vector3(0, 0.62, -0.42), _paint) # leg shield
-	LowPoly.box(_lean_pivot, Vector3(0.14, 0.12, 0.3), black, Vector3(0, 0.5, 0.95))             # rear fender
-	LowPoly.box(_lean_pivot, Vector3(0.2, 0.06, 0.04), Color.RED, Vector3(0, 0.66, 0.76), LowPoly.glow(Color("#ff2a2a"), 2.5))  # tail light
-
-	# Front fork: steers left/right with the handlebar
-	_fork = Node3D.new()
-	_fork.name = "Fork"
-	_fork.position = Vector3(0, 0, -0.62)
-	_lean_pivot.add_child(_fork)
-	_front_wheel = _make_wheel(_fork, Vector3(0, WHEEL_RADIUS, -0.03))
-	LowPoly.box(_fork, Vector3(0.16, 0.06, 0.42), Color.WHITE, Vector3(0, 0.58, -0.03), _paint)    # front fender
-	LowPoly.box(_fork, Vector3(0.08, 0.62, 0.08), dark, Vector3(0, 0.62, 0.1))                     # steering column
-	LowPoly.box(_fork, Vector3(0.3, 0.18, 0.26), Color.WHITE, Vector3(0, 1.0, 0.12), _paint)       # handlebar cover
-	LowPoly.box(_fork, Vector3(0.66, 0.05, 0.05), black, Vector3(0, 1.02, 0.2))                    # handlebar
-	LowPoly.box(_fork, Vector3(0.18, 0.1, 0.05), Color.WHITE, Vector3(0, 1.0, -0.02), LowPoly.glow(Color("#fff6d5"), 3.0))  # headlight
+	var scene: PackedScene = load(MODEL_PATH)
+	var model := scene.instantiate() as Node3D
+	model.name = "Scooter"
+	_lean_pivot.add_child(model)
+	# The parts the game moves (names set in the Blender script)
+	_fork = model.find_child("Fork", true, false) as Node3D             # turns around the tilted steering axis
+	_front_wheel = model.find_child("FrontWheel", true, false) as Node3D
+	_rear_wheel = model.find_child("RearWheel", true, false) as Node3D
+	_apply_model_materials(model)
 
 	# Real light from the headlight, switched on at night by the DayCycle
 	_headlight = SpotLight3D.new()
-	_headlight.position = Vector3(0, 1.0, -0.1)
 	_headlight.rotation_degrees = Vector3(-10, 0, 0)
 	_headlight.spot_range = 30.0
 	_headlight.spot_angle = 34.0
 	_headlight.light_energy = 5.0
 	_headlight.light_color = Color("#fff1d0")
 	_headlight.visible = false
-	_fork.add_child(_headlight)
+	model.find_child("HeadlightMount", true, false).add_child(_headlight)
 
 	# Rider model (only visible while someone is riding)
-	_rider = CharacterModel.new()
-	_rider.name = "Rider"
-	_lean_pivot.add_child(_rider)
-	_rider.build(Player.JACKET_COLOR, Player.PANTS_COLOR, Player.HELMET_COLOR)
-	_rider.pose_sit()
-	_rider.position = Vector3(0, -0.1, 0.3)
-	_rider.visible = false
+	_make_grips()
+	_build_rider()
 	add_to_group("fp_hide")
 	_build_mirrors()
 
 
-## A wheel = tire + hub + one spoke (so you can see it spinning).
-func _make_wheel(parent: Node3D, pos: Vector3) -> Node3D:
-	var pivot := Node3D.new()
-	pivot.position = pos
-	parent.add_child(pivot)
-	var tire := LowPoly.cylinder(pivot, WHEEL_RADIUS, 0.12, Color("#1c1c1c"), Vector3.ZERO, 12)
-	tire.rotation.z = PI * 0.5   # cylinder axis along X
-	var hub := LowPoly.cylinder(pivot, 0.12, 0.14, Color("#9ea3a8"), Vector3.ZERO, 8)
-	hub.rotation.z = PI * 0.5
-	LowPoly.box(pivot, Vector3(0.15, 0.42, 0.05), Color("#9ea3a8"))
-	return pivot
+## Spots on the handlebar grips (they turn with the bars), for the rider's hands.
+var _grips: Array[Node3D] = []
+
+
+func _make_grips() -> void:
+	for side: float in [-1.0, 1.0]:
+		var g := Node3D.new()
+		g.name = "GripL" if side < 0.0 else "GripR"
+		_fork.add_child(g)
+		# grip middle in the scooter's space (from tools/blender/make_scooter.py), into the fork's space
+		var model_pos := Vector3(side * 0.3, 1.025, -0.388)
+		var fork_xf := _rel_to(_fork, _lean_pivot)
+		g.transform = Transform3D(Basis.IDENTITY, fork_xf.affine_inverse() * model_pos)
+		_grips.append(g)
+
+
+static func _rel_to(n: Node3D, root: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	while n != null and n != root:
+		t = n.transform * t
+		n = n.get_parent() as Node3D
+	return t
+
+
+## The player sitting on the motor (same look as the player on foot).
+func _build_rider() -> void:
+	_rider = CharacterModel.new()
+	_rider.name = "Rider"
+	_lean_pivot.add_child(_rider)
+	_rider.build_look(CharacterModel.rider_look(GameState.player_female))
+	_rider.pose_sit()
+	# the detailed model has shorter arms: sit closer to the handlebar so the hands reach
+	_rider.position = Vector3(0, -0.1, 0.14 if _rider.has_skin() else 0.3)
+	_rider.visible = is_ridden
+	_rider.set_first_person(_fp_hidden)
+	_rider.hand_targets = {"l": _grips[0], "r": _grips[1]}   # hands hold the grips (detailed model)
+
+
+## Rebuild the rider (after picking male / female).
+func refresh_rider() -> void:
+	_rider.free()
+	_build_rider()
+
+
+## Swap the model's materials by name: "Paint" gets the motor's color, the lights glow.
+func _apply_model_materials(node: Node) -> void:
+	var mi := node as MeshInstance3D
+	if mi != null and mi.mesh != null:
+		for i in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(i)
+			if m == null:
+				continue
+			match m.resource_name:
+				"Paint":
+					mi.set_surface_override_material(i, _paint)
+				"HeadLight":
+					mi.set_surface_override_material(i, LowPoly.glow(Color("#fff6d5"), 3.0))
+				"TailLight":
+					mi.set_surface_override_material(i, LowPoly.glow(Color("#ff2a2a"), 2.5))
+				"Signal":
+					mi.set_surface_override_material(i, LowPoly.glow(Color("#ff9a1a"), 0.6))
+	for c in node.get_children():
+		_apply_model_materials(c)
 
 
 # --- Engine + horn sound, generated in code --------------------------------

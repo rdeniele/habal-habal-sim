@@ -22,6 +22,7 @@ import bpy
 import bmesh
 import math
 import os
+from mathutils import Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.normpath(os.path.join(HERE, "..", "..", "assets", "characters"))
@@ -424,6 +425,158 @@ def hair_parts():
     return out
 
 
+# ---------------------------------------------------------------------------------------
+# Rider gear and extra clothes: messy hair, rider ponytail, hood, baggy cargo pants with
+# pockets, glove cuffs, backpack with straps, cap, cane.
+# ---------------------------------------------------------------------------------------
+
+def to_object(name, bm):
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for f in bm.faces:
+        f.smooth = True
+    if not bm.loops.layers.uv:
+        bm.loops.layers.uv.new("UVMap")
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
+
+def tuft(name, base, direction, r, length, sides=5):
+    """A pointed clump of hair: a small cone from `base` along `direction`."""
+    d = Vector(direction).normalized()
+    base = Vector(base)
+    ref = Vector((0, 0, 1)) if abs(d.z) < 0.9 else Vector((1, 0, 0))
+    u = d.cross(ref).normalized()
+    w = d.cross(u)
+    bm = bmesh.new()
+    ring = [bm.verts.new(base + (u * math.cos(TAU * i / sides) + w * math.sin(TAU * i / sides)) * r) for i in range(sides)]
+    tip = bm.verts.new(base + d * length)
+    back = bm.verts.new(base - d * r * 0.6)
+    for i in range(sides):
+        j = (i + 1) % sides
+        bm.faces.new((ring[i], ring[j], tip))
+        bm.faces.new((ring[j], ring[i], back))
+    return to_object(name, bm)
+
+
+def band(name, points, width, thick):
+    """A flat strap following points (width along X), like a backpack strap."""
+    pts = [Vector(p) for p in points]
+    bm = bmesh.new()
+    rows = []
+    for i, p in enumerate(pts):
+        t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+        side = Vector((1, 0, 0))
+        n = t.cross(side).normalized()
+        rows.append([bm.verts.new(p + side * sx * width / 2 + n * sy * thick / 2)
+                     for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    for a, b in zip(rows, rows[1:]):
+        for i in range(4):
+            j = (i + 1) % 4
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    bm.faces.new(rows[0][::-1])
+    bm.faces.new(rows[-1])
+    return to_object(name, bm)
+
+
+HEAD_R = [(0.118, 0.055), (0.095, 0.092), (0.06, 0.108), (0.03, 0.112), (0.0, 0.11), (-0.03, 0.104)]
+
+
+def head_radius(z):
+    for (z0, r0), (z1, r1) in zip(HEAD_R, HEAD_R[1:]):
+        if z1 <= z <= z0:
+            return r0 + (r1 - r0) * (z0 - z) / (z0 - z1)
+    return HEAD_R[0][1] if z > HEAD_R[0][0] else HEAD_R[-1][1]
+
+
+def on_head(a, z, s=1.06):
+    r = head_radius(z) * s
+    return (math.sin(a) * r, math.cos(a) * r, z)
+
+
+def gear_parts():
+    out = []
+    # Messy hair: a cap with spiky clumps on top, a fringe over the forehead, tufts at the sides
+    parts = [hair_shell("hair_messy_cap", 1.08, 0.07, -0.05, bumpy=0.03)]
+    for a in (-0.55, -0.2, 0.15, 0.5):
+        parts.append(tuft("fringe", on_head(a, 0.085), (math.sin(a) * 0.5, 0.75, -0.65), 0.028, 0.062))
+    for a in (0.0, 1.1, 2.2, 3.14, -1.1, -2.2, 0.55, -0.55):
+        z = 0.112 if abs(a) < 0.7 else 0.1
+        parts.append(tuft("top", on_head(a, z, 0.95), (math.sin(a) * 0.8, math.cos(a) * 0.8 - 0.3, 0.7), 0.034, 0.05))
+    for a in (1.6, -1.6, 2.4, -2.4, 3.0, -3.0):
+        parts.append(tuft("side", on_head(a, 0.03), (math.sin(a), math.cos(a), -0.8), 0.028, 0.045))
+    out.append(join("hair_messy", parts))
+
+    # Rider ponytail: tied high at the back, a few loose strands framing the face
+    cap = hair_shell("hair_ponyr_cap", 1.07, 0.078, -0.04, bumpy=0.015)
+    tail = limb("hair_ponyr_tail", 0.25, [(0.0, 0.035, 0.035, 0.035), (0.3, 0.05, 0.045, 0.045), (0.7, 0.04, 0.035, 0.035),
+                                          (1.0, 0.012, 0.012, 0.012)], sides=7)
+    tail.location = (0, -0.115, 0.075)
+    tail.rotation_euler = (math.radians(-40), 0, 0)
+    tie = loft("hair_ponyr_tie", [ellipse(z, 0.03, 0.03, 0.03, cy=-0.115) for z in (0.09, 0.07)], 6)
+    for o in (tail,):
+        bpy.ops.object.select_all(action="DESELECT")
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        bpy.ops.object.transform_apply(location=True, rotation=True)
+    parts = [cap, tail, tie]
+    for side in (-1, 1):
+        parts.append(tuft("strand", on_head(side * 1.15, 0.05), (side * 0.15, 0.2, -1.0), 0.014, 0.13))
+    for a in (-0.35, 0.0, 0.35):
+        parts.append(tuft("bang", on_head(a, 0.09), (math.sin(a) * 0.4, 0.7, -0.7), 0.02, 0.055))
+    out.append(join("hair_ponyr", parts))
+
+    # Hood lying on the back of the neck (torso space: origin = hip line)
+    out.append(loft("hood", [ellipse(z, rx, f, b, cy=cy) for z, rx, f, b, cy in
+                             [(0.67, 0.05, 0.02, 0.05, -0.085), (0.645, 0.1, 0.05, 0.09, -0.065),
+                              (0.6, 0.125, 0.08, 0.11, -0.05), (0.55, 0.12, 0.08, 0.1, -0.055),
+                              (0.52, 0.08, 0.05, 0.07, -0.07)]], 12))
+
+    # Baggy cargo pants legs, side pockets (left and right), glove cuff
+    out.append(limb("thigh_baggy", THIGH, [(-0.05, 0.082, 0.082, 0.082), (0.08, 0.1, 0.102, 0.102), (0.5, 0.094, 0.1, 0.094),
+                                           (1.0, 0.082, 0.084, 0.082)], sides=10))
+    out.append(limb("shin_baggy", SHIN, [(-0.04, 0.08, 0.08, 0.08), (0.4, 0.076, 0.076, 0.078), (0.85, 0.072, 0.072, 0.072),
+                                         (1.0, 0.07, 0.07, 0.07)], sides=10))
+    pocket = loft("cargo_pocket", [ellipse(z, w, d, d, cx=0.094) for z, w, d in
+                                   [(-0.14, 0.006, 0.04), (-0.15, 0.022, 0.055), (-0.29, 0.024, 0.055), (-0.3, 0.008, 0.045)]], 8)
+    out.append(pocket)
+    out.append(mirrored_copy(pocket, "cargo_pocket_l"))
+    out.append(limb("glove_cuff", 0.04, [(0.0, 0.041, 0.04, 0.04), (1.0, 0.04, 0.037, 0.037)], sides=8))
+
+    # Backpack (torso space) with two shoulder straps
+    pack = loft("pack", [ellipse(z, rx, f, b, cy=-0.17) for z, rx, f, b in
+                         [(0.555, 0.07, 0.03, 0.03), (0.54, 0.125, 0.055, 0.065), (0.31, 0.135, 0.06, 0.075),
+                          (0.24, 0.12, 0.05, 0.06), (0.225, 0.06, 0.03, 0.03)]], 12)
+    front = loft("pack_pocket", [ellipse(z, rx, f, b, cy=-0.24) for z, rx, f, b in
+                                 [(0.41, 0.06, 0.01, 0.01), (0.4, 0.095, 0.02, 0.03), (0.27, 0.1, 0.02, 0.035),
+                                  (0.26, 0.05, 0.01, 0.01)]], 10)
+    parts = [pack, front]
+    for side in (-1, 1):
+        x = side * 0.105
+        parts.append(band("strap", [(x, -0.13, 0.5), (x, -0.08, 0.595), (x, 0.0, 0.615), (x, 0.075, 0.575),
+                                    (x * 1.02, 0.112, 0.48), (x * 1.05, 0.114, 0.38), (x * 1.08, 0.104, 0.3)], 0.042, 0.01))
+    out.append(join("backpack", parts))
+
+    # Baseball cap (head space)
+    crown = hair_shell("cap_crown", 1.12, 0.07, 0.025)
+    brim = loft("cap_brim", [ellipse(z, 0.095, 0.2, 0.02) for z in (0.074, 0.066)], 12)
+    out.append(join("cap", [crown, brim]))
+
+    # Walking cane (forearm space: hangs from the hand)
+    stick = limb("cane", 0.86, [(0.0, 0.011, 0.011, 0.011), (1.0, 0.011, 0.011, 0.011)], sides=6)
+    hook = limb("cane_hook", 0.09, [(0.0, 0.012, 0.012, 0.012), (1.0, 0.012, 0.012, 0.012)], sides=6)
+    hook.rotation_euler = (math.radians(-90), 0, 0)
+    bpy.ops.object.select_all(action="DESELECT")
+    hook.select_set(True)
+    bpy.context.view_layer.objects.active = hook
+    bpy.ops.object.transform_apply(location=True, rotation=True)
+    out.append(join("cane", [stick, hook]))
+    return out
+
+
 def helmet():
     shell = loft("helmet_shell", [ellipse(z, rx, f, b) for z, rx, f, b in
                                   [(0.175, 0.0005, 0.0005, 0.0005), (0.165, 0.075, 0.075, 0.08), (0.13, 0.125, 0.125, 0.13),
@@ -462,6 +615,7 @@ def main():
     skirt("dress_skirt", 0.46, 0.12)
     collar()
     hair_parts()
+    gear_parts()
     helmet()
     visor()
 

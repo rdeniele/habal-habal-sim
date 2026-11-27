@@ -494,6 +494,7 @@ func on_crash() -> void:
 	motor.detach_passenger()
 	var off := motor.global_position + motor.global_transform.basis * Vector3(1.2, 0, 0.8)
 	_passenger.get_off_and_leave(get_parent(), off + Vector3.UP * 0.05, _nearest_sidewalk(off))
+	_passenger.fall(motor.global_transform.basis.x * 2.0 + motor.get_forward() * 2.5 + Vector3.UP * 3.0)
 	_say("complain")
 	_passenger = null
 	GameState.add_rating(1)

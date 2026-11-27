@@ -114,14 +114,18 @@ func _spawn_enforcer(id: int) -> Node3D:
 	holder.global_position = p - right * (w * 0.5 + 1.8) - d * (w * 0.5 + 1.5)
 	holder.rotation.y = atan2(-right.x, -right.z)   # facing the road
 	var female := _rng.randf() < 0.3
+	var detailed := CharacterModel.NPC_MODELS % ["enforcer", "f" if female else "m"]
+	var has_model := ResourceLoader.exists(detailed)
 	var m := CharacterModel.make_look("enforcer_%s" % female, {
 		"body": "female" if female else "male", "skin": Color("#b97d4f"),
 		"hair": "short", "hair_color": Color("#1a1410"),
 		"top": "polo", "top_color": Color("#9cc3e6"), "bottom": "pants", "bottom_color": Color("#1d3557"),
-		"helmet": Color("#1d3557"),   # uniform cap
+		"helmet": Color(0, 0, 0, 0) if has_model else Color("#1d3557"),   # uniform cap
+		"model": detailed if has_model else "",
 	}, 150.0)
 	holder.add_child(m)
-	LowPoly.box(holder, Vector3(0.44, 0.34, 0.33), Color("#d4ff3a"), Vector3(0, 1.28, 0))   # reflective vest
+	if not has_model:   # the detailed model wears its own uniform and cap
+		LowPoly.box(holder, Vector3(0.44, 0.34, 0.33), Color("#d4ff3a"), Vector3(0, 1.28, 0))   # reflective vest
 	LowPoly.label(holder, "Traffic Enforcer", Vector3(0, 2.35, 0), 0.28)
 	holder.set_meta("model", m)
 	return holder

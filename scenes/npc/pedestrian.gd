@@ -66,6 +66,15 @@ func _physics_process(delta: float) -> void:
 		_bubble.visible = _bubble_time > 0.0
 	if knocked > 0.0:
 		knocked -= delta
+		if model.is_ragdoll():
+			if knocked <= 0.7:   # get up where the body ended up
+				var at := model.ragdoll_ground_position()
+				global_position = Vector3(at.x, 0, at.z)
+				_pos = global_position
+				model.stop_ragdoll()
+				model.rotation.x = -1.45
+				model.position.y = 0.18
+			return
 		var lying := knocked > 0.7
 		model.rotation.x = lerpf(model.rotation.x, -1.45 if lying else 0.0, 1.0 - exp(-10.0 * delta))
 		model.position.y = lerpf(model.position.y, 0.18 if lying else 0.0, 1.0 - exp(-10.0 * delta))
@@ -122,10 +131,11 @@ func _sidewalk_spot() -> Vector3:
 	return Vector3(pos.x, 0, pos.z)
 
 
-## Hit by the motor.
-func knock(impact: float) -> void:
+## Hit by the motor. `push` = the motor's velocity.
+func knock(impact: float, push: Vector3 = Vector3.ZERO) -> void:
 	if knocked > 0.0:
 		return
+	model.start_ragdoll(push * 0.8 + Vector3.UP * minf(1.0 + impact * 0.25, 3.5), push * 0.25)
 	knocked = 2.2 + minf(impact * 0.15, 1.5)
 	shout(SHOUTS[randi() % SHOUTS.size()])
 

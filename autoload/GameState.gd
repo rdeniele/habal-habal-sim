@@ -32,6 +32,7 @@ var energy: float = 100.0  # 100 = fresh, 0 = passes out
 
 # --- Story / tutorial ---
 var player_name: String = ""
+var player_female: bool = false   # rider look: male or female (picked at the license desk)
 var has_license: bool = false
 var story_done: bool = false
 
@@ -68,6 +69,7 @@ func reset_new_game() -> void:
 	respect = 0
 	wake_up_needs()
 	player_name = ""
+	player_female = false
 	has_license = false
 	story_done = false
 	ratings = [5, 5, 5, 5, 5]
@@ -160,7 +162,7 @@ func to_dict() -> Dictionary:
 		"money": money, "day": day, "debt": debt, "rent_unpaid_days": rent_unpaid_days,
 		"current_motor_id": current_motor_id, "motor_color_index": motor_color_index,
 		"motor_mode": motor_mode, "rental_out": rental_out, "motor_fuel": motor_fuel, "motor_damage": motor_damage,
-		"respect": respect, "reckless_count": reckless_count, "tickets": tickets, "player_name": player_name, "has_license": has_license,
+		"respect": respect, "reckless_count": reckless_count, "tickets": tickets, "player_name": player_name, "player_female": player_female, "has_license": has_license,
 		"story_done": story_done, "ratings": ratings.duplicate(),
 	}
 
@@ -181,6 +183,7 @@ func from_dict(d: Dictionary) -> void:
 	reckless_count = int(d.get("reckless_count", 0))
 	tickets = int(d.get("tickets", 0))
 	player_name = str(d.get("player_name", ""))
+	player_female = bool(d.get("player_female", false))
 	has_license = bool(d.get("has_license", false))
 	story_done = bool(d.get("story_done", false))
 	ratings.clear()

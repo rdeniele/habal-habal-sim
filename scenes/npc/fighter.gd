@@ -74,7 +74,14 @@ func set_mood(m: Mood) -> void:
 	_mood_time = 0.0
 	_windup = 0.0
 	_punch_t = -1.0
-	if m != Mood.DOWN:
+	if m == Mood.DOWN:   # knocked out: crumple, shoved back a little
+		var back := model.global_transform.basis.z.normalized()
+		model.start_ragdoll(back * 2.2 + Vector3.UP * 1.2, back * 1.8)
+	else:
+		if model.is_ragdoll():
+			var at := model.ragdoll_ground_position()
+			model.stop_ragdoll()
+			global_position = Vector3(at.x, global_position.y, at.z)
 		model.rotation.x = 0.0
 		model.position.y = 0.0
 
@@ -116,8 +123,9 @@ func _physics_process(delta: float) -> void:
 			if _mood_time > FLEE_TIME or dist > 60.0:
 				combat.remove_fighter(self)
 		Mood.DOWN:
-			model.rotation.x = lerpf(model.rotation.x, -1.45, 1.0 - exp(-10.0 * delta))
-			model.position.y = lerpf(model.position.y, 0.18, 1.0 - exp(-10.0 * delta))
+			if not model.is_ragdoll():
+				model.rotation.x = lerpf(model.rotation.x, -1.45, 1.0 - exp(-10.0 * delta))
+				model.position.y = lerpf(model.position.y, 0.18, 1.0 - exp(-10.0 * delta))
 			if _mood_time > 2.6:
 				set_mood(Mood.RETURNING if home_vehicle != null else Mood.FLEEING)
 				say("Sige na, sige na! (Okay, okay!)", 2.5)

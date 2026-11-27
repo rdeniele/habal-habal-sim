@@ -53,7 +53,19 @@ func _ready() -> void:
 	add_to_group("fp_hide")
 	_model = CharacterModel.new()
 	_yaw_pivot.add_child(_model)
-	_model.build(JACKET_COLOR, PANTS_COLOR, HELMET_COLOR)
+	_model.build_look(CharacterModel.rider_look(GameState.player_female))
+
+
+## Rebuild the rider model (after picking male / female). Keeps the helmet on or off.
+func refresh_look() -> void:
+	var helmet_on := _model.has_helmet()
+	var old := _model
+	_model = CharacterModel.new()
+	_yaw_pivot.add_child(_model)
+	_model.build_look(CharacterModel.rider_look(GameState.player_female))
+	_model.set_helmet(helmet_on)
+	_model.visible = old.visible
+	old.queue_free()
 
 
 func _physics_process(delta: float) -> void:
@@ -100,6 +112,17 @@ func _process_walk(delta: float) -> void:
 
 func _process_knockdown(delta: float) -> void:
 	_knock_time += delta
+	if _model.is_ragdoll():
+		# the body flops on its own; we (and the camera) follow it, then get up where it stopped
+		var at := _model.ragdoll_ground_position()
+		global_position = global_position.lerp(at, 1.0 - exp(-12.0 * delta))
+		velocity = Vector3.ZERO
+		if _knock_time >= KNOCKDOWN_TIME - 0.6:
+			global_position = at
+			_model.stop_ragdoll()
+			_model.rotation.x = -1.45
+			_model.position.y = 0.18
+		return
 	_apply_gravity(delta)
 	var friction := 6.0 if is_on_floor() else 0.5
 	var flat := Vector3(velocity.x, 0, velocity.z).move_toward(Vector3.ZERO, friction * delta)
@@ -128,6 +151,7 @@ func _apply_gravity(delta: float) -> void:
 
 ## Hide/disable the on-foot body while riding (the motor shows a rider model).
 func set_riding(on: bool) -> void:
+	_model.stop_ragdoll()
 	state = State.RIDING if on else State.ON_FOOT
 	visible = not on
 	collision_layer = 0 if on else LAYER_PLAYER
@@ -162,15 +186,20 @@ func face_yaw(yaw: float) -> void:
 
 
 ## Thrown off the motor in a crash.
-func knock_off(from_pos: Vector3, launch: Vector3, impact: float) -> void:
+func knock_off(from_pos: Vector3, launch: Vector3, impact: float, momentum: Vector3 = Vector3.ZERO) -> void:
 	set_riding(false)
 	teleport(from_pos)
 	velocity = launch
 	state = State.KNOCKED_DOWN
 	_knock_time = 0.0
 	health = maxf(5.0, health - impact * 2.5)
-	if Vector2(launch.x, launch.z).length() > 0.1:
-		_yaw_pivot.rotation.y = atan2(-launch.x, -launch.z)
+	var travel := momentum if momentum.length() > 0.5 else launch
+	if Vector2(travel.x, travel.z).length() > 0.1:
+		_yaw_pivot.rotation.y = atan2(-travel.x, -travel.z)
+	# thrown off the seat: the body keeps some of the motor's momentum and tumbles over the bars
+	_yaw_pivot.reset_physics_interpolation()
+	_model.pose_sit()
+	_model.start_ragdoll(launch + momentum * 0.15, momentum * 0.3 + Vector3.UP * 1.0)
 
 
 ## True when a spot is free for the player's capsule (used when getting off).

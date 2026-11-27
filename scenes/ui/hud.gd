@@ -48,6 +48,7 @@ var _help_hint: PanelContainer
 var _vehicle_panel: PanelContainer
 var _speed_label: Label
 var _motor_label: Label
+var _fuel_label: Label
 var _fuel_bar: ProgressBar
 var _fuel_fill: StyleBoxFlat
 var _status_label: Label
@@ -219,7 +220,7 @@ func _ready() -> void:
 	_speed_label = _label(speed_row, "0", 44, Color.WHITE)
 	var unit := _label(speed_row, " km/h", 18, Color(0.8, 0.85, 0.9))
 	unit.size_flags_vertical = Control.SIZE_SHRINK_END
-	_label(vb, "FUEL", 13, Color(0.8, 0.85, 0.9))
+	_fuel_label = _label(vb, "FUEL", 13, Color(0.8, 0.85, 0.9))
 	_fuel_bar = _bar(vb, ACCENT)
 	_fuel_fill = _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	_status_label = _label(vb, "", 13, Color("#ffb4a2"))
@@ -493,12 +494,15 @@ func toggle_help() -> void:
 	_help_hint.visible = not _help_panel.visible
 
 
-func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_name: String, damage: float) -> void:
+## liters / tank = gas left and tank size; range_km = how far that gets you.
+func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_name: String, damage: float,
+		liters: float = 0.0, tank: float = 0.0, range_km: float = 0.0) -> void:
 	_vehicle_panel.visible = is_shown
 	if not is_shown:
 		return
 	_speed_label.text = str(int(round(speed_kmh)))
 	_motor_label.text = motor_name.to_upper()
+	_fuel_label.text = "GAS  %.1f / %.1f L  ·  %.1f km left" % [liters, tank, range_km]
 	_fuel_bar.value = fuel_ratio * 100.0
 	_fuel_fill.bg_color = Color("#ef476f") if fuel_ratio < 0.2 else ACCENT
 	var status := ""
