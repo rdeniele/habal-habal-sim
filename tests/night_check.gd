@@ -44,9 +44,8 @@ func _run() -> void:
 	game.world.set_night_glow(0.0)
 	await _shot("night_e_no_wall_glow")
 	game.world.set_night_glow(1.0)
-	var mw: StandardMaterial3D = game.world.get("_mat_wall")
-	print("wall material: emission %s energy %.2f tex %s, albedo tex %s, vcolor %s" % [mw.emission, mw.emission_energy_multiplier,
-		mw.emission_texture != null, mw.albedo_texture != null, mw.vertex_color_use_as_albedo])
+	var mw: ShaderMaterial = game.world.get("_mat_wall")
+	print("wall material: window glow %.2f" % float(mw.get_shader_parameter("glow")))
 	get_tree().quit()
 
 

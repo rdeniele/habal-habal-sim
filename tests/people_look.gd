@@ -101,6 +101,30 @@ func _run() -> void:
 	for c in get_children():
 		if c is CharacterModel:
 			c.queue_free()
+	# code-built NPCs: standing, walking, sitting, passenger with helmet
+	var spec := [["vendor_f", "stand"], ["office_worker_m", "walk"], ["student_f", "walk"], ["fellow_rider_m", "sit"],
+		["misc_f", "helmet"], ["delivery_m", "helmet"]]
+	for i in spec.size():
+		var cm := CharacterModel.new()
+		add_child(cm)
+		var female: bool = (spec[i][0] as String).ends_with("_f")
+		cm.build_look({"body": "female" if female else "male", "height": 1.0,
+			"helmet": Color("#e63946") if spec[i][1] == "helmet" else Color(0, 0, 0, 0),
+			"model": "res://assets/characters/npc/%s.glb" % spec[i][0]})
+		cm.position = Vector3(-2.2 + i * 0.88, 0.45 if spec[i][1] == "sit" else 0.0, 0)
+		cm.rotation.y = PI * 0.75 if spec[i][1] != "stand" else PI
+		if spec[i][1] == "walk":
+			for k in 12:
+				cm.walk(1.1 + i, 0.45)
+				await get_tree().process_frame
+		elif spec[i][1] == "sit":
+			cm.pose_sit(0.7)
+	cam.position = Vector3(0, 1.15, 5.6)
+	cam.look_at(Vector3(0, 0.9, 0))
+	await _shot("people_code")
+	for c in get_children():
+		if c is CharacterModel:
+			c.queue_free()
 	# random street people
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42

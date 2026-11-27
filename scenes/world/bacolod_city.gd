@@ -42,7 +42,7 @@ var _sea := PackedVector2Array()
 var _boundary := PackedVector2Array()   # Bacolod city limits
 var _stalls_by_chunk := {}           # chunk key -> Array of generated stall dicts
 
-var _mat_wall: StandardMaterial3D
+var _mat_wall: ShaderMaterial
 var _mat_roof: StandardMaterial3D
 var _mat_road: StandardMaterial3D
 var _mat_sidewalk: StandardMaterial3D
@@ -286,16 +286,9 @@ func _load_places() -> void:
 # --- Materials & shared meshes --------------------------------------------------------
 
 func _make_materials() -> void:
-	_mat_wall = TextureFactory.material(TextureFactory.facade())
-	_mat_wall.emission_enabled = true
-	_mat_wall.emission = Color.WHITE
-	_mat_wall.emission_texture = TextureFactory.facade_glow()
-	# MULTIPLY: only the window pixels of the glow mask light up (the default ADD made whole walls white at night)
-	_mat_wall.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
-	_mat_wall.emission_energy_multiplier = 0.0
-	_mat_wall.set_meta("max_energy", 1.2)
+	_mat_wall = BuildingArt.wall_material()   # painted facade images, lit windows at night
 	glow_materials.append(_mat_wall)
-	_mat_roof = TextureFactory.material(TextureFactory.roof())
+	_mat_roof = BuildingArt.roof_material()
 	_mat_road = TextureFactory.material(TextureFactory.asphalt(), false)
 	_mat_sidewalk = TextureFactory.material(TextureFactory.sidewalk(), false)
 	_mat_ground = TextureFactory.material(TextureFactory.grass())
@@ -687,6 +680,13 @@ func _add_building(bd: Dictionary, mb_wall: MeshBuilder, mb_roof: MeshBuilder, f
 	var roof_col := Color(ROOF_COLORS[ci % ROOF_COLORS.size()])
 	if str(bd.get("t", "")) in ["church", "cathedral"]:
 		wall_col = Color("#e8dcc4")
+	var church := str(bd.get("t", "")) in ["church", "cathedral"]
+	# the same building always gets the same look
+	var look := RandomNumberGenerator.new()
+	look.seed = hash(poly[0]) + ci
+	var floors := maxi(1, roundi(h / FLOOR_H))
+	var floor_h := h / floors
+	var upper: int = BuildingArt.CHURCH if church else BuildingArt.UPPER[look.randi() % BuildingArt.UPPER.size()]
 	var u := 0.0
 	for i in n:
 		var p0 := poly[i]
@@ -696,9 +696,16 @@ func _add_building(bd: Dictionary, mb_wall: MeshBuilder, mb_roof: MeshBuilder, f
 		if length < 0.05:
 			continue
 		var normal := Vector3(d.y, 0, -d.x) / length   # outward for our footprint winding
-		var u1 := u + roundf(maxf(length / FLOOR_H, 1.0))
-		mb_wall.add_wall(p0, p1, 0.0, h, normal, wall_col, u, u1, 1.0 / FLOOR_H)
-		u = u1
+		var bays := maxi(1, roundi(length / FLOOR_H))
+		# ground floor: each bay is its own house front or shop
+		for k in bays:
+			mb_wall.layer = BuildingArt.CHURCH if church else BuildingArt.GROUND[look.randi() % BuildingArt.GROUND.size()]
+			mb_wall.add_wall(p0 + d * (float(k) / bays), p0 + d * (float(k + 1) / bays), 0.0, floor_h, normal, wall_col,
+				1.0, 0.0, 1.0 / floor_h)   # right-to-left from outside, so signs read
+		if floors > 1:
+			mb_wall.layer = upper
+			mb_wall.add_wall(p0, p1, floor_h, h, normal, wall_col, u + bays, u, 1.0 / floor_h)
+		u += bays
 		var a := Vector3(p0.x, 0, p0.y)
 		var b := Vector3(p1.x, 0, p1.y)
 		var c := Vector3(p1.x, h, p1.y)

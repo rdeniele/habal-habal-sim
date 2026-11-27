@@ -455,8 +455,8 @@ func _attach_skin(path: String) -> void:
 	var k := 1.0 / maxf(_rel(_skel).basis.get_scale().y, 0.0001)   # the skeleton may be in centimeters
 	# image-to-3D models (with a "head_end" bone) vs. our code-built NPCs: the head sits differently
 	var generated := _skel.find_bone("head_end") >= 0
-	var hy: float = 0.055 if generated else 0.105
-	var hs: float = 1.22 if generated else 1.12
+	var hy: float = 0.055 if generated else 0.128
+	var hs: float = 1.22 if generated else 1.1
 	_helmet.transform = Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * hs * k), Vector3(0, hy, 0.015) * k)
 	_sync_skin()
 

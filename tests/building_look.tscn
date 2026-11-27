@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/building_look.gd" id="1_bl"]
+
+[node name="BuildingLook" type="Node"]
+script = ExtResource("1_bl")

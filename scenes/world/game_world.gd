@@ -19,7 +19,7 @@ var environment: Environment
 var sky_material: ShaderMaterial   # scenes/world/sky.gdshader (clouds, sun, moon, stars)
 
 ## Materials that glow at night. Each has meta "max_energy".
-var glow_materials: Array[BaseMaterial3D] = []
+var glow_materials: Array[Material] = []
 
 
 # --- Places ------------------------------------------------------------------
@@ -113,7 +113,11 @@ func get_map_credit() -> String:
 func set_night_glow(amount: float) -> void:
 	for m in glow_materials:
 		# Squared so the glow fades in gently around sunset instead of all at once.
-		m.emission_energy_multiplier = amount * amount * float(m.get_meta("max_energy", 1.0))
+		var energy := amount * amount * float(m.get_meta("max_energy", 1.0))
+		if m is ShaderMaterial:
+			(m as ShaderMaterial).set_shader_parameter("glow", energy)
+		else:
+			(m as StandardMaterial3D).emission_energy_multiplier = energy
 
 
 ## Sky, fog, ambient light and the sun. Call once in _ready.

@@ -9,6 +9,8 @@ var verts := PackedVector3Array()
 var normals := PackedVector3Array()
 var colors := PackedColorArray()
 var uvs := PackedVector2Array()
+var uv2s := PackedVector2Array()
+var layer := 0.0   # stored in UV2.x: which facade image (building walls)
 
 
 func is_empty() -> bool:
@@ -20,6 +22,7 @@ func add_vertex(v: Vector3, n: Vector3, c: Color, uv: Vector2) -> void:
 	normals.append(n)
 	colors.append(c)
 	uvs.append(uv)
+	uv2s.append(Vector2(layer, 0.0))
 
 
 ## Flat, upward-facing triangle at height y. Points are (x, z). UV = world x/z * uv_scale.
@@ -84,6 +87,7 @@ func commit(material: Material, into: ArrayMesh = null) -> ArrayMesh:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	if material != null:
 		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
