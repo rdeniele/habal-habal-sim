@@ -14,6 +14,8 @@ func _ready() -> void:
 	GameState.debug_skip_story()   # tests start after the tutorial
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
+	game.death_chance = 0.0   # (test) accidents never end the game
+	game.traffic.can_hit_player = false
 
 
 func _physics_process(delta: float) -> void:

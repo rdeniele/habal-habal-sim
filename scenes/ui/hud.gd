@@ -58,6 +58,9 @@ var _health_bar: ProgressBar
 var _food_bar: ProgressBar
 var _water_bar: ProgressBar
 var _energy_bar: ProgressBar
+var _gas_bar: ProgressBar
+var _gas_row: Control
+var _gas_text: Label
 var _resting_label: Label
 var _full_map_layer: ColorRect
 
@@ -205,6 +208,10 @@ func _ready() -> void:
 	_food_bar = _need_bar(hb, "FOOD", Color("#f4a261"))
 	_water_bar = _need_bar(hb, "WATER", Color("#4cc9f0"))
 	_energy_bar = _need_bar(hb, "ENERGY", Color("#ffd166"))
+	# your motor's gas, visible on foot too
+	_gas_bar = _need_bar(hb, "GAS", ACCENT)
+	_gas_row = _gas_bar.get_parent() as Control
+	_gas_text = _label(hb, "", 12, Color(0.85, 0.9, 0.95))
 	_resting_label = _label(hb, "Resting...  (energy coming back)", 12, Color("#b8f2e6"))
 	_resting_label.visible = false
 
@@ -512,6 +519,18 @@ func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_n
 		status = "Damage %d%%" % int(damage)
 	_status_label.text = status
 	_status_label.visible = status != ""
+
+
+## The gas bar in the health panel: shown whenever you have a motor.
+func update_gas(has_motor: bool, ratio: float, liters: float, range_km: float) -> void:
+	_gas_row.visible = has_motor
+	_gas_text.visible = has_motor
+	if not has_motor:
+		return
+	_gas_bar.value = ratio * 100.0
+	var low := ratio < 0.2
+	_gas_bar.modulate = Color(1.0, 0.45, 0.5) if low else Color.WHITE
+	_gas_text.text = "%.1f L  ·  %.1f km left%s" % [liters, range_km, "  ·  LOW!" if low else ""]
 
 
 ## Health / food / water / energy bars (all 0..1).

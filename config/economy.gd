@@ -36,6 +36,11 @@ const BOOKING_INTERVAL_MAX: float = 14.0
 ## Each star below 5.0 makes you wait this much longer (0.8 = +80% per star).
 const BOOKING_LOW_RATING_SLOWDOWN: float = 0.8
 
+# --- Accidents -------------------------------------------------------------
+## Chance of dying (game over) in a motor crash, when a car hits you, or when you lose a
+## fist fight. Never during the tutorial. 0.0 = nobody dies.
+const DEATH_CHANCE: float = 0.5
+
 # --- Other costs -----------------------------------------------------------
 const LICENSE_FEE: int = 585
 const CLINIC_FEE: int = 500

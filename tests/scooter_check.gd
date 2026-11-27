@@ -13,6 +13,8 @@ func _ready() -> void:
 	Settings.camera_view = 0   # third person so the rider shows (not saved)
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
+	game.death_chance = 0.0   # (test) accidents never end the game
+	game.traffic.can_hit_player = false
 	_run()
 
 

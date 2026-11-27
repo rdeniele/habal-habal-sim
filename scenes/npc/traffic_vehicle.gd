@@ -96,6 +96,7 @@ func _physics_process(delta: float) -> void:
 		progress -= seg_len
 		_pick_next()
 	_place()
+	traffic.check_hit_player(self)
 
 
 ## How fast we want to go right now (obstacles, lights, turns).

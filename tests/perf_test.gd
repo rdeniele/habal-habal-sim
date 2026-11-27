@@ -18,6 +18,8 @@ func _ready() -> void:
 	Engine.max_fps = 0
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
+	game.death_chance = 0.0   # (test) accidents never end the game
+	game.traffic.can_hit_player = false
 	motor = game.motor
 	player = game.player
 	_run()

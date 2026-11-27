@@ -25,6 +25,8 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute("user://screenshots")
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
+	game.death_chance = 0.0   # (test) accidents never end the game
+	game.traffic.can_hit_player = false
 	hud = game.hud
 	story = game.story
 	player = game.player

@@ -18,6 +18,8 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	game = (load("res://scenes/main/game.tscn") as PackedScene).instantiate()
 	add_child(game)
+	game.death_chance = 0.0   # (test) accidents never end the game
+	game.traffic.can_hit_player = false
 	print("  game + map loaded in %d ms" % (Time.get_ticks_msec() - t0))
 	world = game.world
 	motor = game.motor

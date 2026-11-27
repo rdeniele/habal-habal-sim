@@ -27,6 +27,10 @@ var player: Player
 var motor: Motorcycle
 var pedestrians: Pedestrians
 var enabled := true
+## A moving car reaching you counts as an accident (careless drivers don't brake for you).
+var can_hit_player := true
+var _hit_cooldown := 0.0
+signal player_hit(car: TrafficVehicle)
 
 var vehicles: Array[TrafficVehicle] = []
 var _rng := RandomNumberGenerator.new()
@@ -232,11 +236,26 @@ func gap_ahead(v: TrafficVehicle, max_d: float) -> float:
 		best = minf(best, along - (v.length + o.length) * 0.5)
 	var pp := player_pos() - p
 	var pa := pp.dot(f)
-	if pa > 0.0 and pa < max_d + 2.0 and absf(pp.dot(right)) < 1.7:
+	if pa > 0.0 and pa < max_d + 2.0 and absf(pp.dot(right)) < 1.7 and not (v.careless and can_hit_player):
 		best = minf(best, pa - v.length * 0.5 - 1.0)
 	if pedestrians != null:
 		best = minf(best, pedestrians.gap_ahead(p, f, right, v.length, max_d))
 	return best
+
+
+## Called by each car after it moves: did its front reach you?
+func check_hit_player(v: TrafficVehicle) -> void:
+	if not can_hit_player or v.speed < 2.5 or Time.get_ticks_msec() < _hit_cooldown:
+		return
+	var f := v.forward()
+	var rel := player_pos() - v.global_position
+	var along := rel.dot(f)
+	if absf(rel.y) > 1.5 or along <= 0.0 or along > v.length * 0.5 + 0.55:
+		return
+	if absf(rel.dot(Vector3(-f.z, 0, f.x))) > v.box.x * 0.5 + 0.35:
+		return
+	_hit_cooldown = Time.get_ticks_msec() + 4000.0
+	player_hit.emit(v)
 
 
 func player_in_front_of(v: TrafficVehicle, dist: float) -> bool:

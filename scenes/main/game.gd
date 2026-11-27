@@ -50,6 +50,8 @@ var _sfx: AudioStreamPlayer
 var _ambience: Ambience           # in-game sound: no music, just the world (wind, birds, sea...)
 var _last_ui_open := false
 var _ending_day := false
+var death_chance := Economy.DEATH_CHANCE   # tests set this to 0
+var is_dead := false
 
 
 func _ready() -> void:
@@ -105,8 +107,8 @@ func _ready() -> void:
 	police.wanted_changed.connect(func(stars: int) -> void: hud.set_wanted(stars, police.offenses))
 	police.busted.connect(_on_busted)
 	combat.assault.connect(func(where: Vector3) -> void: police.violation("fighting", where))
-	combat.fight_lost.connect(func() -> void:
-		_send_to_clinic("Natalo ka!\n(You lost the fight)", "You lost the fight and woke up at the clinic."))
+	combat.fight_lost.connect(_on_fight_lost)
+	traffic.player_hit.connect(_on_car_hit_player)
 	hud.set_map_world(world)
 	hud.full_map.clicked.connect(_on_map_clicked)
 	_hands = FpHands.new()
@@ -293,7 +295,62 @@ func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 	var from := motor.global_position + wall_normal * 1.2 + Vector3.UP * 0.9
 	player.knock_off(from, wall_normal * 3.0 + Vector3.UP * 3.5, impact, motor.get_forward() * impact)
 	cam.set_target(player, false)
+	if _roll_death():
+		_die("You died in a motorcycle crash.")
+		return
 	hud.show_toast("Aray! Natumba ka! (You crashed)\nPress F near the motor to pick it up.", 3.5)
+
+
+## A moving car ran into you (on foot or on the motor).
+func _on_car_hit_player(car: TrafficVehicle) -> void:
+	if is_dead or _ending_day or player.state == Player.State.KNOCKED_DOWN:
+		return
+	var push := car.forward() * car.speed
+	var impact := maxf(car.speed, 4.0)
+	car.crash(car.forward() * 0.5, 0.0, 3.0)
+	if player.state == Player.State.RIDING:
+		booking.on_crash()
+		story.on_crash()
+		motor.set_ridden(false)
+		motor.fall_over()
+		motor.damage = minf(100.0, motor.damage + impact * 1.5)
+	var from := player.global_position + Vector3.UP * 0.6
+	player.knock_off(from, push * 0.6 + Vector3.UP * 3.5, impact, push * 0.5)
+	cam.set_target(player, false)
+	_play(Sfx.crash())
+	if _roll_death():
+		_die("You were hit by a %s." % car.kind)
+		return
+	hud.show_toast("Aray! Nabangga ka! (A %s hit you)" % car.kind, 3.5)
+
+
+func _on_fight_lost() -> void:
+	if not _roll_death():
+		_send_to_clinic("Natalo ka!\n(You lost the fight)", "You lost the fight and woke up at the clinic.")
+		return
+	var back := player.get_model().global_transform.basis.z.normalized()
+	player.knock_off(player.global_position + Vector3.UP * 0.2, back * 2.0 + Vector3.UP * 2.0, 20.0)
+	_die("You were beaten to death in a fist fight.")
+
+
+## 50% (Economy.DEATH_CHANCE) in accidents and lost fights; never during the tutorial.
+func _roll_death() -> bool:
+	return not story.active and not is_dead and randf() < death_chance
+
+
+## Game over: let the body fall for a moment, then show the screen.
+func _die(reason: String) -> void:
+	if is_dead:
+		return
+	is_dead = true
+	_ending_day = true   # no more input, time stops
+	combat.cancel()
+	police.clear_wanted()
+	booking.abort_trip()
+	player.health = 0.0
+	await get_tree().create_timer(1.6).timeout
+	get_tree().paused = true
+	add_child(GameOver.new(reason))
 
 
 func _on_out_of_fuel() -> void:
@@ -968,6 +1025,7 @@ func _update_hud() -> void:
 		combat.is_in_combat(), pose["punch_t"], pose["right"], pose["blocking"], get_physics_process_delta_time())
 	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage,
 		motor.fuel_liters, motor.get_tank_liters(), motor.get_range_km())
+	hud.update_gas(motor.is_active, motor.get_fuel_ratio(), motor.fuel_liters, motor.get_range_km())
 	_update_gps()
 
 
