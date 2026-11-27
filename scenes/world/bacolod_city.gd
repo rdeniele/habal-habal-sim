@@ -11,6 +11,8 @@ const MAP_DIR := "res://data/map/bacolod/"
 const BUILD_BUDGET_MSEC := 4       # max time per frame spent finishing chunks
 const MAX_THREADS := 3             # chunks prepared in the background at the same time
 const STREAM_INTERVAL := 0.5       # seconds between "which chunks do I need" checks
+const POST_ROAD_CLEARANCE := 0.5   # includes the post's 0.3 m collision box
+const ROAD_SURFACE_CELL := 100.0
 
 const WALL_COLORS := ["#f2c14e", "#f78154", "#4d9de0", "#7bc96f", "#e8a0a0", "#f4e9cd",
 	"#c9a7eb", "#5fc4b8", "#ffb5a7", "#e8e288", "#a3d5ff", "#d9d4c7"]
@@ -41,6 +43,7 @@ var _play_rect := Rect2()
 var _sea := PackedVector2Array()
 var _boundary := PackedVector2Array()   # Bacolod city limits
 var _stalls_by_chunk := {}           # chunk key -> Array of generated stall dicts
+var _road_surface_grid := {}        # cell -> asphalt triangles; read-only during streaming
 
 var _mat_wall: ShaderMaterial
 var _mat_roof: StandardMaterial3D
@@ -224,6 +227,7 @@ func _load_graph() -> void:
 		var pts: Array = e["pts"]
 		_add_street_label(e, pts, names, classes)
 		var width := float(e["w"])
+		_index_road_surface(_pts(pts), width)
 		var major := MAJOR_CLASSES.has(str(classes[int(e["k"])]))
 		var prev := ids[int(e["a"])]
 		for i in range(1, pts.size() - 1):
@@ -232,6 +236,37 @@ func _load_graph() -> void:
 			road_graph.add_road(prev, id, width, major)
 			prev = id
 		road_graph.add_road(prev, ids[int(e["b"])], width, major)
+
+
+## Index the same asphalt geometry that chunks render, including mitered bends.
+## Build this for the whole map before workers start: neighboring roads may be in other chunks.
+func _index_road_surface(pts: PackedVector2Array, width: float) -> void:
+	var surface := MeshBuilder.new()
+	_strip(surface, pts, width * 0.5, 0.0, 5.0)
+	for i in range(0, surface.verts.size(), 3):
+		var tri := PackedVector2Array()
+		for j in 3:
+			var v := surface.verts[i + j]
+			tri.append(Vector2(v.x, v.z))
+		var bounds := Rect2(tri[0], Vector2.ZERO).expand(tri[1]).expand(tri[2]).grow(POST_ROAD_CLEARANCE)
+		for x in range(floori(bounds.position.x / ROAD_SURFACE_CELL), floori(bounds.end.x / ROAD_SURFACE_CELL) + 1):
+			for z in range(floori(bounds.position.y / ROAD_SURFACE_CELL), floori(bounds.end.y / ROAD_SURFACE_CELL) + 1):
+				var cell := Vector2i(x, z)
+				if not _road_surface_grid.has(cell):
+					_road_surface_grid[cell] = []
+				(_road_surface_grid[cell] as Array).append(tri)
+
+
+func _post_clear_of_roads(p: Vector2) -> bool:
+	var cell := Vector2i(floori(p.x / ROAD_SURFACE_CELL), floori(p.y / ROAD_SURFACE_CELL))
+	for tri: PackedVector2Array in _road_surface_grid.get(cell, []):
+		if Geometry2D.is_point_in_polygon(p, tri):
+			return false
+		for i in 3:
+			var nearest := Geometry2D.get_closest_point_to_segment(p, tri[i], tri[(i + 1) % 3])
+			if p.distance_squared_to(nearest) <= POST_ROAD_CLEARANCE * POST_ROAD_CLEARANCE:
+				return false
+	return true
 
 
 ## One label per named road piece (for the zoomed-in full map). Longest / biggest first.
@@ -617,6 +652,8 @@ func _street_posts(pts: PackedVector2Array, w: float, posts: Array[Transform3D],
 			if acc >= 40.0:
 				acc = 0.0
 				var p := a + dir * t + nrm * (w * 0.5 + 0.9)
+				if not _post_clear_of_roads(p):
+					continue
 				var base := Vector3(p.x, 3.75, p.y)
 				posts.append(Transform3D(Basis.IDENTITY, base))
 				var yaw := atan2(nrm.x, nrm.y)
