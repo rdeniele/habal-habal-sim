@@ -46,6 +46,7 @@ static func random_name(female: bool, rng: RandomNumberGenerator) -> String:
 
 ## Builds a passenger who looks like their type (kind = personality id, e.g. "lola").
 var _down := 0.0   # > 0 while lying on the ground after a crash
+var dead := false  # died in the crash: stays down, then is cleared away
 
 func build(rng: RandomNumberGenerator, passenger_name: String, kind: String = "", female: bool = false) -> void:
 	display_name = passenger_name
@@ -91,7 +92,9 @@ func _physics_process(delta: float) -> void:
 		State.WALKING_TO_MOTOR, State.LEAVING:
 			if _down > 0.0:
 				_down -= delta
-				if _down <= 0.0 and model.is_ragdoll():
+				if _down <= 0.0 and dead:
+					queue_free()
+				elif _down <= 0.0 and model.is_ragdoll():
 					global_position = model.ragdoll_ground_position()
 					model.stop_ragdoll()
 				_t = 0.0
@@ -101,8 +104,9 @@ func _physics_process(delta: float) -> void:
 
 ## Thrown off in a crash: flop for a moment, then get up and walk off. Call after
 ## get_off_and_leave().
-func fall(velocity: Vector3) -> void:
-	_down = 2.2
+func fall(velocity: Vector3, lethal: bool = false) -> void:
+	dead = lethal
+	_down = Pedestrian.BODY_SECONDS if lethal else 2.2
 	model.pose_sit(0.7)
 	model.start_ragdoll(velocity, velocity * 0.3 + Vector3.UP)
 

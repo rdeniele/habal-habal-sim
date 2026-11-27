@@ -63,12 +63,36 @@ func _run() -> void:
 		for i in 3:
 			await get_tree().process_frame
 		var eye := motor.get_head_position()
+		cam.cull_mask = 0xFFFFF & ~Motorcycle.LAYER_MIRROR_ONLY   # like the game camera
 		cam.fov = 75.0
 		cam.global_position = eye
 		cam.look_at(eye + fwd * 2.0 + Vector3(0, -0.9, 0))
 		await _shot("scooter_e_fp_%s" % ("female" if female else "male"))
+		for i in 2:   # what each side mirror shows
+			motor.set_mirrors_active(true)
+			await get_tree().process_frame
+			motor.set_mirrors_active(true)
+			await get_tree().process_frame
+		var mirrors: Array = motor.get("_mirrors")
+		for i in mirrors.size():
+			motor.set_mirrors_active(true)
+			await get_tree().process_frame
+			(mirrors[i]["viewport"] as SubViewport).get_texture().get_image().save_png(
+				"user://screenshots/mirror_%s_%d.png" % ["female" if female else "male", i])
 		motor.set_fp_hidden(false)
 		cam.fov = 40.0
+	# the real game camera in first person (press C until the view is first person)
+	motor.set_physics_process(true)
+	cam.current = false
+	game.cam.camera.current = true
+	game.cam.set("_preset", 3)
+	game.cam.set_target(motor, true)
+	await get_tree().create_timer(1.5).timeout
+	await _shot("scooter_f_game_camera_fp")
+	game.cam.set("_preset", 0)
+	await get_tree().create_timer(0.5).timeout
+	motor.set_physics_process(false)
+	cam.current = true
 	GameState.time_hours = 20.5
 	game.day_cycle.set_process(true)
 	motor.set_headlight(true)

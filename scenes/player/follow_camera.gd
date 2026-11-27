@@ -61,6 +61,7 @@ func _ready() -> void:
 	camera.far = 2500.0
 	_arm.add_child(camera)
 	camera.current = true
+	camera.cull_mask &= ~Motorcycle.LAYER_MIRROR_ONLY   # the mirror-only copy of you
 
 
 func set_target(node: Node3D, follow: bool) -> void:

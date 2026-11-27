@@ -89,6 +89,33 @@ func _run() -> void:
 	await _wait(2.4)
 	_check(game.is_dead and _over() != null, "losing a fist fight can kill you")
 
+	for chance: float in [0.0, 1.0]:
+		await _new_game(chance)
+		await _wait(1.0)
+		var people := game.find_children("*", "Pedestrian", true, false)
+		_check(not people.is_empty(), "found a pedestrian")
+		if people.is_empty():
+			continue
+		var ped := people[0] as Pedestrian
+		game.player.teleport(ped.global_position + Vector3(3, 0.3, 3))
+		game.call("_on_hit_person", ped, 9.0)
+		await _wait(4.5)
+		if chance == 0.0:
+			_check(is_instance_valid(ped) and not ped.dead and ped.knocked <= 0.0, "0%: the pedestrian gets back up")
+		else:
+			_check(is_instance_valid(ped) and ped.dead and ped.model.is_ragdoll(), "a hit pedestrian can die and stays down")
+			ped.knocked = 0.05
+			await _wait(0.5)
+			_check(not is_instance_valid(ped), "the body is cleared away later")
+
+	var p := Passenger.new()
+	game.add_child(p)
+	p.build(RandomNumberGenerator.new(), "Test", "", false)
+	p.get_off_and_leave(game, game.player.global_position + Vector3(2, 0, 0), game.player.global_position)
+	p.fall(Vector3(2, 3, 0), true)
+	await _wait(3.0)
+	_check(is_instance_valid(p) and p.dead and p.model.is_ragdoll(), "a thrown passenger can die")
+
 	await _new_game(1.0)
 	game.story.active = true
 	game.call("_on_fight_lost")

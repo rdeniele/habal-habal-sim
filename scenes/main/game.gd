@@ -287,7 +287,7 @@ func _near_motor() -> bool:
 func _on_motor_crashed(impact: float, wall_normal: Vector3) -> void:
 	if player.state != Player.State.RIDING:
 		return
-	booking.on_crash()   # passenger falls off and cancels (if any)
+	booking.on_crash(_roll_npc_death())   # passenger falls off and cancels (if any)
 	story.on_crash()     # fails passenger training (if running)
 	motor.set_ridden(false)
 	motor.fall_over()
@@ -309,7 +309,7 @@ func _on_car_hit_player(car: TrafficVehicle) -> void:
 	var impact := maxf(car.speed, 4.0)
 	car.crash(car.forward() * 0.5, 0.0, 3.0)
 	if player.state == Player.State.RIDING:
-		booking.on_crash()
+		booking.on_crash(_roll_npc_death())
 		story.on_crash()
 		motor.set_ridden(false)
 		motor.fall_over()
@@ -336,6 +336,11 @@ func _on_fight_lost() -> void:
 ## 50% (Economy.DEATH_CHANCE) in accidents and lost fights; never during the tutorial.
 func _roll_death() -> bool:
 	return not story.active and not is_dead and randf() < death_chance
+
+
+## Same odds for the people you hit and your passenger.
+func _roll_npc_death() -> bool:
+	return not story.active and randf() < death_chance
 
 
 ## Game over: let the body fall for a moment, then show the screen.
@@ -776,8 +781,12 @@ func _on_motor_hit_vehicle(v: Node) -> void:
 
 ## You hit someone walking: they fall and shout; your passenger is not happy.
 func _on_hit_person(person: Node, impact: float) -> void:
-	(person as Pedestrian).knock(impact, motor.get_forward() * motor.speed)
+	var ped := person as Pedestrian
+	var lethal := impact >= 4.0 and _roll_npc_death()   # a slow bump never kills
+	ped.knock(impact, motor.get_forward() * motor.speed, lethal)
 	booking.on_hit_person()
+	if lethal:
+		hud.show_toast("They didn't make it...", 4.0)
 	# a slow bump is still an offense; a real hit is reckless driving
 	police.violation("reckless" if impact >= 4.0 else "bump", person.global_position)
 

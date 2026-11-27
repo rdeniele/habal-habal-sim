@@ -17,6 +17,8 @@ var side := 1.0               # which sidewalk (+1 right, -1 left of travel dire
 var progress := 0.0
 var seg_len := 1.0
 var knocked := 0.0            # > 0 while lying on the ground
+var dead := false             # died in an accident: stays down, then is cleared away
+const BODY_SECONDS := 25.0
 var _phase := 0.0
 var _bubble: Label3D
 var _bubble_time := 0.0
@@ -66,6 +68,10 @@ func _physics_process(delta: float) -> void:
 		_bubble.visible = _bubble_time > 0.0
 	if knocked > 0.0:
 		knocked -= delta
+		if dead:
+			if knocked <= 0.0:
+				queue_free()
+			return
 		if model.is_ragdoll():
 			if knocked <= 0.7:   # get up where the body ended up
 				var at := model.ragdoll_ground_position()
@@ -131,11 +137,18 @@ func _sidewalk_spot() -> Vector3:
 	return Vector3(pos.x, 0, pos.z)
 
 
-## Hit by the motor. `push` = the motor's velocity.
-func knock(impact: float, push: Vector3 = Vector3.ZERO) -> void:
+## Hit by the motor. `push` = the motor's velocity. `lethal` = they don't get up again.
+func knock(impact: float, push: Vector3 = Vector3.ZERO, lethal: bool = false) -> void:
 	if knocked > 0.0:
 		return
 	model.start_ragdoll(push * 0.8 + Vector3.UP * minf(1.0 + impact * 0.25, 3.5), push * 0.25)
+	if lethal:
+		dead = true
+		knocked = BODY_SECONDS
+		collision_layer = 0   # you can't hit them again
+		_bubble_time = 0.0
+		_bubble.visible = false
+		return
 	knocked = 2.2 + minf(impact * 0.15, 1.5)
 	shout(SHOUTS[randi() % SHOUTS.size()])
 

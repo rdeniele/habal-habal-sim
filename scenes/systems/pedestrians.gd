@@ -81,10 +81,10 @@ func _maybe_street_fight(center: Vector3) -> void:
 		return
 	_street_fight_timer = _rng.randf_range(60.0, 140.0)
 	for a in people:
-		if not is_instance_valid(a) or a.global_position.distance_to(center) > 80.0:
+		if not is_instance_valid(a) or a.dead or a.global_position.distance_to(center) > 80.0:
 			continue
 		for b in people:
-			if b != a and is_instance_valid(b) and b.global_position.distance_to(a.global_position) < 15.0:
+			if b != a and is_instance_valid(b) and not b.dead and b.global_position.distance_to(a.global_position) < 15.0:
 				combat.start_street_fight(a, b)
 				return
 

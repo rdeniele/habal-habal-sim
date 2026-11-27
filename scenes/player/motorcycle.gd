@@ -21,6 +21,10 @@ const CRASH_SPEED := 8.5         # m/s (~30 km/h) head-on hit that throws you of
 const MAX_LEAN := 0.5            # radians (~29 degrees)
 const WHEEL_RADIUS := 0.27
 const MODEL_PATH := "res://assets/vehicles/scooter.glb"
+## Render layers for first person: the headless body is seen by your eyes but not by the
+## mirrors; a complete copy of you is seen only by the mirrors.
+const LAYER_FP_BODY := 1 << 10
+const LAYER_MIRROR_ONLY := 1 << 11
 const MIX_RATE := 22050.0        # placeholder engine/horn sound sample rate
 const PUSH_SPEED := 1.6          # m/s when pushing the motor with no gas
 const PASSENGER_SEAT := Vector3(0, -0.07, 0.62)
@@ -47,6 +51,7 @@ var _fork: Node3D
 var _front_wheel: Node3D
 var _rear_wheel: Node3D
 var _rider: CharacterModel
+var _mirror_rider: CharacterModel   # you, with your head, for the side mirrors
 var _fp_hidden := false
 var _mirrors: Array[Dictionary] = []   # {"viewport": SubViewport, "camera": Camera3D, "glass": Node3D, "side": float}
 var _mirrors_active := false
@@ -130,6 +135,7 @@ func place(pos: Vector3, new_heading: float) -> void:
 func set_ridden(on: bool) -> void:
 	is_ridden = on
 	_rider.visible = on
+	_update_mirror_rider()
 	if on:
 		is_fallen = false   # picking the motor back up
 
@@ -151,6 +157,7 @@ func set_fp_hidden(hidden: bool) -> void:
 	_fp_hidden = hidden
 	_rider.visible = is_ridden
 	_rider.set_first_person(hidden)
+	_update_mirror_rider()
 
 
 ## Side mirrors only render while someone looks at them (first person). Call every frame.
@@ -171,6 +178,7 @@ func _build_mirrors() -> void:
 		var cam := Camera3D.new()
 		cam.fov = 45.0
 		cam.far = 300.0
+		cam.cull_mask = 0xFFFFF & ~LAYER_FP_BODY   # mirrors see the whole you, not the headless one
 		sv.add_child(cam)
 		var glass := MeshInstance3D.new()
 		var quad := QuadMesh.new()
@@ -203,7 +211,7 @@ func _update_mirrors(delta: float) -> void:
 		var cam: Camera3D = m["camera"]
 		# look backward and a little outward, like a real mirror angle
 		var dir := back.rotated(Vector3.UP, -side * 0.18)
-		cam.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), glass.global_position + Vector3(0, 0.05, 0))
+		cam.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), glass.global_position + Vector3(0, 0.15, 0))
 
 
 func set_headlight(on: bool) -> void:
@@ -478,10 +486,38 @@ func _build_rider() -> void:
 	_rider.set_first_person(_fp_hidden)
 	_rider.hand_targets = {"l": _grips[0], "r": _grips[1]}   # hands hold the grips (detailed model)
 
+	_mirror_rider = CharacterModel.new()
+	_mirror_rider.name = "MirrorRider"
+	_mirror_rider.cast_shadows = false   # one shadow is enough
+	_lean_pivot.add_child(_mirror_rider)
+	_mirror_rider.build_look(CharacterModel.rider_look(GameState.player_female))
+	_mirror_rider.pose_sit()
+	_mirror_rider.position = _rider.position
+	_mirror_rider.hand_targets = _rider.hand_targets
+	_set_layers(_mirror_rider, LAYER_MIRROR_ONLY)
+	_update_mirror_rider()
+
+
+## Only in first person: show the mirror copy, and move the headless body to its own layer.
+func _update_mirror_rider() -> void:
+	if _mirror_rider == null:
+		return
+	_mirror_rider.visible = is_ridden and _fp_hidden
+	_set_layers(_rider, LAYER_FP_BODY if _fp_hidden else 1)
+
+
+static func _set_layers(node: Node, layers: int) -> void:
+	if node is VisualInstance3D:
+		(node as VisualInstance3D).layers = layers
+	for c in node.get_children():
+		_set_layers(c, layers)
+
 
 ## Rebuild the rider (after picking male / female).
 func refresh_rider() -> void:
 	_rider.free()
+	_mirror_rider.free()
+	_mirror_rider = null
 	_build_rider()
 
 

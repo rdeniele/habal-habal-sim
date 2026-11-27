@@ -38,7 +38,7 @@ const BOOKING_LOW_RATING_SLOWDOWN: float = 0.8
 
 # --- Accidents -------------------------------------------------------------
 ## Chance of dying (game over) in a motor crash, when a car hits you, or when you lose a
-## fist fight. Never during the tutorial. 0.0 = nobody dies.
+## fist fight. People you hit and your passenger in a crash have the same chance of dying. Never during the tutorial. 0.0 = nobody dies.
 const DEATH_CHANCE: float = 0.5
 
 # --- Other costs -----------------------------------------------------------

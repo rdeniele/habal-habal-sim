@@ -487,19 +487,21 @@ func on_hit_person() -> void:
 
 
 ## Called by the game when the rider crashes and falls off.
-func on_crash() -> void:
+func on_crash(lethal: bool = false) -> void:
 	if stage != Stage.TO_DROPOFF or _passenger == null:
 		return
 	# Passenger falls off too, gets scared and cancels: no fare, 1 star.
 	motor.detach_passenger()
 	var off := motor.global_position + motor.global_transform.basis * Vector3(1.2, 0, 0.8)
 	_passenger.get_off_and_leave(get_parent(), off + Vector3.UP * 0.05, _nearest_sidewalk(off))
-	_passenger.fall(motor.global_transform.basis.x * 2.0 + motor.get_forward() * 2.5 + Vector3.UP * 3.0)
-	_say("complain")
+	_passenger.fall(motor.global_transform.basis.x * 2.0 + motor.get_forward() * 2.5 + Vector3.UP * 3.0, lethal)
+	if not lethal:
+		_say("complain")
 	_passenger = null
 	GameState.add_rating(1)
 	GameState.today["cancelled"] = int(GameState.today["cancelled"]) + 1
-	hud.show_toast("Passenger cancelled the trip!\nNo fare · ★☆☆☆☆", 3.5)
+	hud.show_toast("Your passenger died in the crash.\nNo fare · ★☆☆☆☆" if lethal \
+		else "Passenger cancelled the trip!\nNo fare · ★☆☆☆☆", 3.5)
 	_play(Sfx.error())
 	_back_to_searching()
 
