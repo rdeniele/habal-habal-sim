@@ -290,6 +290,8 @@ func _make_materials() -> void:
 	_mat_wall.emission_enabled = true
 	_mat_wall.emission = Color.WHITE
 	_mat_wall.emission_texture = TextureFactory.facade_glow()
+	# MULTIPLY: only the window pixels of the glow mask light up (the default ADD made whole walls white at night)
+	_mat_wall.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
 	_mat_wall.emission_energy_multiplier = 0.0
 	_mat_wall.set_meta("max_energy", 1.2)
 	glow_materials.append(_mat_wall)

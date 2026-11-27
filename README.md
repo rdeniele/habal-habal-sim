@@ -201,6 +201,20 @@ in Blender, but the script overwrites it), then rebuild the kit and render a pre
 & "D:\Tools\Blenderlender-5.3.0-windows-x64lender.exe" -b -P tools/blender/preview_character.py -- preview.png
 ```
 
+## Trailer
+
+The game films its own trailer (`tests/trailer.gd`: scripted shots, captions, title) with Godot's
+Movie Maker mode, then ffmpeg adds the beat (`tools/trailer_music.py`, original drums + the game's
+guitar loop sped up to 128 BPM) and encodes the MP4. Output goes to `builds/trailer/`.
+
+```powershell
+godot --path . --write-movie builds/trailer/trailer_global.avi --fixed-fps 30 res://tests/trailer.tscn
+```
+
+Add `-- --local` at the end for the Bacolod-first captions. Then make the drums
+(`python tools/trailer_music.py builds/trailer/drums.wav 25.6 20.8`) and mix/encode with ffmpeg
+(guitar loop: `%APPDATA%\Godotpp_userdata\Habal-Habal Simulator\sounds\music_loop.wav`, made by the audio test).
+
 ## Automated tests
 
 Godot can run the game by itself and check that things work (it also saves screenshots to

@@ -64,7 +64,8 @@ func draw_distance() -> float:
 
 func apply() -> void:
 	# Window
-	if not DisplayServer.get_name().contains("headless"):
+	# (headless: no window; Movie Maker: keep the recording size given on the command line)
+	if not DisplayServer.get_name().contains("headless") and not OS.has_feature("movie"):
 		if fullscreen:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		else:
