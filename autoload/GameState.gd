@@ -24,6 +24,8 @@ var reckless_count: int = 0      # reckless driving offenses (fines go up)
 var tickets: int = 0             # traffic tickets so far
 var rent_unpaid_days: int = 0
 var respect: int = 0
+## Adopted dogs and cats, waiting outside home: [{"kind": "cat", "seed": 123}]
+var pets: Array = []
 
 # --- Body needs (0-100). Reset each morning after sleeping. ---
 var hunger: float = 80.0   # 100 = full, 0 = starving
@@ -67,6 +69,7 @@ func reset_new_game() -> void:
 	debt = 0
 	rent_unpaid_days = 0
 	respect = 0
+	pets = []
 	wake_up_needs()
 	player_name = ""
 	player_female = false
@@ -163,7 +166,7 @@ func to_dict() -> Dictionary:
 		"current_motor_id": current_motor_id, "motor_color_index": motor_color_index,
 		"motor_mode": motor_mode, "rental_out": rental_out, "motor_fuel": motor_fuel, "motor_damage": motor_damage,
 		"respect": respect, "reckless_count": reckless_count, "tickets": tickets, "player_name": player_name, "player_female": player_female, "has_license": has_license,
-		"story_done": story_done, "ratings": ratings.duplicate(),
+		"story_done": story_done, "ratings": ratings.duplicate(), "pets": pets.duplicate(true),
 	}
 
 
@@ -186,6 +189,8 @@ func from_dict(d: Dictionary) -> void:
 	player_female = bool(d.get("player_female", false))
 	has_license = bool(d.get("has_license", false))
 	story_done = bool(d.get("story_done", false))
+	for p in d.get("pets", []):
+		pets.append({"kind": str(p["kind"]), "seed": int(p["seed"])})
 	ratings.clear()
 	for r in d.get("ratings", [5, 5, 5, 5, 5]):
 		ratings.append(int(r))

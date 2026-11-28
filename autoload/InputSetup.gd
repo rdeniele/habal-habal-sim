@@ -18,6 +18,8 @@ func _enter_tree() -> void:
 	_axis("move_right", JOY_AXIS_LEFT_X, 1.0)
 	_keys("run", [KEY_SHIFT])
 	_buttons("run", [JOY_BUTTON_LEFT_STICK])
+	_keys("crouch", [KEY_CTRL])
+	_buttons("crouch", [JOY_BUTTON_B])
 
 	# --- Camera look (mouse look is handled directly in FollowCamera) ---
 	_axis("look_left", JOY_AXIS_RIGHT_X, -1.0)

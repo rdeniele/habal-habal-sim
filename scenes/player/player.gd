@@ -7,6 +7,7 @@ enum State { ON_FOOT, RIDING, KNOCKED_DOWN }
 
 const WALK_SPEED := 2.4
 const RUN_SPEED := 5.8
+const CROUCH_SPEED := 1.2
 const ACCEL := 14.0
 const GRAVITY := 22.0
 const TURN_SPEED := 12.0
@@ -28,6 +29,9 @@ var health: float = MAX_HEALTH
 var input_enabled := true
 var fight_target: Node3D = null   # during a fist fight you always face your opponent
 var in_combat := false             # no health regen while fighting
+var crouching := false
+var carrying := false               # a dog or cat is in your arms
+var stroke := 0.0                   # petting hand movement
 
 var _yaw_pivot: Node3D
 var _model: CharacterModel
@@ -88,8 +92,10 @@ func _process_walk(delta: float) -> void:
 	# Move relative to where the camera is looking.
 	var yaw: float = camera.get_yaw() if camera != null else 0.0
 	var dir := Basis(Vector3.UP, yaw) * Vector3(input.x, 0.0, input.y)
+	crouching = input_enabled and not in_combat and Input.is_action_pressed("crouch")
 	var running := Input.is_action_pressed("run")
-	var target_speed := (RUN_SPEED if running else WALK_SPEED) * minf(1.0, input.length())
+	var top := CROUCH_SPEED if crouching else (RUN_SPEED if running else WALK_SPEED)
+	var target_speed := top * minf(1.0, input.length())
 
 	var flat := Vector3(velocity.x, 0, velocity.z).move_toward(dir.normalized() * target_speed, ACCEL * delta)
 	velocity.x = flat.x
@@ -107,7 +113,12 @@ func _process_walk(delta: float) -> void:
 
 	var speed := Vector2(velocity.x, velocity.z).length()
 	_anim_phase += delta * speed * 2.2
-	_model.walk(_anim_phase, clampf(speed / RUN_SPEED * 1.4, 0.0, 1.0))
+	if crouching:
+		_model.pose_crouch(_anim_phase * 1.5, clampf(speed / CROUCH_SPEED, 0.0, 1.0))
+	else:
+		_model.walk(_anim_phase, clampf(speed / RUN_SPEED * 1.4, 0.0, 1.0))
+	if carrying:
+		_model.pose_hold(stroke)
 
 
 func _process_knockdown(delta: float) -> void:
@@ -152,6 +163,7 @@ func _apply_gravity(delta: float) -> void:
 ## Hide/disable the on-foot body while riding (the motor shows a rider model).
 func set_riding(on: bool) -> void:
 	_model.stop_ragdoll()
+	crouching = false
 	state = State.RIDING if on else State.ON_FOOT
 	visible = not on
 	collision_layer = 0 if on else LAYER_PLAYER
@@ -191,6 +203,7 @@ func knock_off(from_pos: Vector3, launch: Vector3, impact: float, momentum: Vect
 	teleport(from_pos)
 	velocity = launch
 	state = State.KNOCKED_DOWN
+	crouching = false
 	_knock_time = 0.0
 	health = maxf(5.0, health - impact * 2.5)
 	var travel := momentum if momentum.length() > 0.5 else launch

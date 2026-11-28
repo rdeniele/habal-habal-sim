@@ -39,6 +39,7 @@ var _length := 4.2
 var _head_yaw := 0.0      # first person on the motor: head turn relative to the bike
 var _head_pitch := -0.1
 var _was_fp := false
+var _crouch := 0.0
 
 
 func _ready() -> void:
@@ -152,7 +153,7 @@ func _physics_process(delta: float) -> void:
 	_arm.spring_length = _length
 	camera.fov = lerpf(camera.fov, 70.0 + speed_ratio * 12.0, 1.0 - exp(-4.0 * delta))
 
-	var goal := target.global_position + Vector3.UP * float(preset["height"])
+	var goal := target.global_position + Vector3.UP * (float(preset["height"]) - _crouch_drop(delta))
 	global_position = global_position.lerp(goal, 1.0 - exp(-14.0 * delta))
 	rotation = Vector3(0, _yaw, 0)
 	_pitch_pivot.rotation = Vector3(_pitch, 0, 0)
@@ -176,9 +177,16 @@ func _first_person(delta: float) -> void:
 		_pitch_pivot.rotation = Vector3(_head_pitch, 0, 0)
 		bike.set_mirrors_active(true)
 	else:
-		global_position = target.global_position + Vector3.UP * 1.62
+		global_position = target.global_position + Vector3.UP * (1.62 - _crouch_drop(delta))
 		rotation = Vector3(0, _yaw, 0)
 		_pitch_pivot.rotation = Vector3(clampf(_pitch, -1.2, 1.0), 0, 0)
+
+
+## The camera comes down smoothly while you crouch.
+func _crouch_drop(delta: float) -> float:
+	var low := target is Player and (target as Player).crouching
+	_crouch = lerpf(_crouch, 0.55 if low else 0.0, 1.0 - exp(-10.0 * delta))
+	return _crouch
 
 
 ## Hide your own body (and the rider) so it doesn't block the first-person view.

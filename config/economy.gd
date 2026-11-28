@@ -39,6 +39,8 @@ const BOOKING_LOW_RATING_SLOWDOWN: float = 0.8
 # --- Accidents -------------------------------------------------------------
 ## Chance of dying (game over) in a motor crash, when a car hits you, or when you lose a
 ## fist fight. People you hit and your passenger in a crash have the same chance of dying. Never during the tutorial. 0.0 = nobody dies.
+## Chance a stray bites when you pick it up (a bite can kill: DEATH_CHANCE).
+const BITE_CHANCE: float = 0.2
 const DEATH_CHANCE: float = 0.5
 
 # --- Other costs -----------------------------------------------------------

@@ -10,7 +10,7 @@ extends RefCounted
 ##   "sea"     waves rolling in and washing out
 ##   "night"   crickets and far frogs
 ## One-shots (played now and then at a random spot around you, so nothing repeats on a loop):
-##   bird("sparrow" / "dove" / "myna"), rooster(), dog(), gecko()  -- a few variants each.
+##   bird("sparrow" / "dove" / "myna"), rooster(), dog(), gecko(), meow()  -- a few variants each.
 
 const RATE := Sfx.RATE
 
@@ -326,6 +326,54 @@ static func dog(variant: int) -> AudioStreamWAV:
 				if at + i < s.size():
 					s[at + i] += voice * env
 		Sfx._lowpass(s, 0.25)
+		return s)
+
+
+## A cat: "mi-aaow", a voice that slides up then down.
+static func meow(variant: int) -> AudioStreamWAV:
+	return _shot("meow_%d" % variant, func() -> PackedFloat32Array:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 8800 + variant
+		var f0 := rng.randf_range(520.0, 700.0)
+		var dur := rng.randf_range(0.45, 0.8)
+		var s := _empty(dur + 0.05)
+		var ph := 0.0
+		for i in int(RATE * dur):
+			var t := float(i) / RATE
+			var u := t / dur
+			var f := f0 * (1.0 + 0.45 * sin(PI * minf(u * 1.6, 1.0)) - 0.25 * maxf(0.0, u - 0.6))
+			ph += f * (1.0 + 0.012 * sin(TAU * 7.0 * t)) / RATE
+			var voice := sin(TAU * ph) + 0.55 * sin(TAU * ph * 2.0) + 0.3 * sin(TAU * ph * 3.0) * (1.0 - u)
+			s[i] = voice * minf(1.0, t / 0.05) * (1.0 - smoothstep(0.65, 1.0, u))
+		Sfx._lowpass(s, 0.45)
+		return s)
+
+
+## A happy cat purring.
+static func purr() -> AudioStreamWAV:
+	return _shot("purr", func() -> PackedFloat32Array:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 8900
+		var s := _empty(1.8)
+		for i in s.size():
+			var t := float(i) / RATE
+			var pulse := pow(0.5 + 0.5 * sin(TAU * 26.0 * t), 3.0)
+			var breath := 0.65 + 0.35 * sin(TAU * 1.1 * t)
+			s[i] = (rng.randf_range(-1.0, 1.0) * 0.6 + sin(TAU * 52.0 * t)) * pulse * breath
+		Sfx._lowpass(s, 0.12)
+		return s)
+
+
+## A happy dog panting.
+static func pant() -> AudioStreamWAV:
+	return _shot("pant", func() -> PackedFloat32Array:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 8950
+		var s := _empty(1.6)
+		for i in s.size():
+			var t := float(i) / RATE
+			s[i] = rng.randf_range(-1.0, 1.0) * pow(maxf(0.0, sin(TAU * 3.6 * t)), 2.0)
+		Sfx._lowpass(s, 0.3)
 		return s)
 
 

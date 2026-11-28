@@ -39,6 +39,8 @@ var combat: Combat
 var police: Police
 var _gps_route := PackedVector3Array()
 var _gps_timer := 0.0
+var animals: Animals              # stray dogs and cats
+var pet_care: PetCare             # lifting, petting, adopting, the cat on your scooter
 var _hands: FpHands                # your fists in first person
 var _pin := {}                    # map pin: {"pos": Vector3, "label": String} (GPS takes you there)
 var _gps_goal := ""               # "" / "home" / "shop": where the day-end GPS points
@@ -107,6 +109,12 @@ func _ready() -> void:
 	police.wanted_changed.connect(func(stars: int) -> void: hud.set_wanted(stars, police.offenses))
 	police.busted.connect(_on_busted)
 	combat.assault.connect(func(where: Vector3) -> void: police.violation("fighting", where))
+	animals = Animals.new()
+	add_child(animals)
+	animals.setup(world, player, motor)
+	pet_care = PetCare.new()
+	add_child(pet_care)
+	pet_care.setup(self, animals)
 	combat.fight_lost.connect(_on_fight_lost)
 	traffic.player_hit.connect(_on_car_hit_player)
 	hud.set_map_world(world)
@@ -196,7 +204,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if event.is_action_pressed("enter_exit"):
-		_toggle_ride()
+		if pet_care.held != null:
+			pet_care.ride_with_held()
+		else:
+			_toggle_ride()
+	elif event.is_action_pressed("option_1") and pet_care.held != null:
+		pet_care.adopt()
+	elif event.is_action_pressed("option_2") and pet_care.held != null:
+		pet_care.put_down()
 	elif event.is_action_pressed("interact"):
 		_interact()
 	elif event.is_action_pressed("toggle_help"):
@@ -343,6 +358,18 @@ func _roll_npc_death() -> bool:
 	return not story.active and randf() < death_chance
 
 
+## A stray bit you when you picked it up. Same deadly odds as other accidents.
+func on_bitten(kind: String) -> void:
+	_play(Sfx.punch(false))
+	player.health = maxf(5.0, player.health - 15.0)
+	if _roll_death():
+		var back := player.get_model().global_transform.basis.z.normalized()
+		player.knock_off(player.global_position + Vector3.UP * 0.2, back * 1.2 + Vector3.UP * 1.5, 6.0)
+		_die("A stray %s bit you. You died of rabies." % kind)
+		return
+	hud.show_toast("Aray! Nakagat ka! (The stray %s bit you)\nYou're lucky this time." % kind, 3.5)
+
+
 ## Game over: let the body fall for a moment, then show the screen.
 func _die(reason: String) -> void:
 	if is_dead:
@@ -421,8 +448,13 @@ func _nearest_place() -> Dictionary:
 func _interact() -> void:
 	if story.try_interact():
 		return
+	if pet_care.held != null:
+		pet_care.caress()
+		return
 	if motor.is_active and _can_refuel():
 		_open_refuel_menu()
+		return
+	if pet_care.try_interact():
 		return
 	if player.state != Player.State.ON_FOOT:
 		return
@@ -1000,8 +1032,12 @@ func _update_prompt() -> void:
 		text = ""
 	elif story_prompt != "":
 		text = story_prompt
+	elif pet_care.held != null:
+		text = pet_care.prompt()
 	elif motor.is_active and _can_refuel():
 		text = "[E]  Magpagasolina  (Refuel)"
+	elif pet_care.prompt() != "":
+		text = pet_care.prompt()
 	else:
 		match player.state:
 			Player.State.ON_FOOT:
@@ -1032,6 +1068,8 @@ func _update_hud() -> void:
 	var pose := combat.player_pose()
 	_hands.update_pose(cam.is_first_person() and player.state == Player.State.ON_FOOT and not _ending_day,
 		combat.is_in_combat(), pose["punch_t"], pose["right"], pose["blocking"], get_physics_process_delta_time())
+	if cam.is_first_person() and pet_care.stroking() > 0.0:
+		_hands.stroke(pet_care.stroking())
 	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
 	hud.update_gas(motor.is_active, motor.get_fuel_ratio(), motor.fuel_liters, motor.get_tank_liters(), motor.get_range_km())
 	_update_gps()

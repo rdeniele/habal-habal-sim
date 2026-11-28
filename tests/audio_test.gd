@@ -34,6 +34,9 @@ func _init() -> void:
 		"rooster": func() -> AudioStreamWAV: return NatureSfx.rooster(0),
 		"dog": func() -> AudioStreamWAV: return NatureSfx.dog(0),
 		"gecko": func() -> AudioStreamWAV: return NatureSfx.gecko(0),
+		"meow": func() -> AudioStreamWAV: return NatureSfx.meow(0),
+		"purr": func() -> AudioStreamWAV: return NatureSfx.purr(),
+		"pant": func() -> AudioStreamWAV: return NatureSfx.pant(),
 	}
 	for sound_name: String in sounds:
 		var t0 := Time.get_ticks_msec()

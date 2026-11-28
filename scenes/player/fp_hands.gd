@@ -35,10 +35,22 @@ func build(skin: Color, sleeve: Color) -> void:
 	visible = false
 
 
+## First person petting: only the right hand, moving back and forth over the animal.
+func stroke(t: float) -> void:
+	if _arms.is_empty():
+		return
+	visible = true
+	_visible_time = 0.0
+	_arms[0].visible = false
+	_arms[1].position = Vector3(0.1 + sin(t * 7.0) * 0.07, -0.2 + absf(cos(t * 7.0)) * 0.015, -0.52)
+	_arms[1].rotation = Vector3(-0.35, 0.25, 0.0)
+
+
 ## Called every frame. punch_t: 0..1 while punching (-1 = not), right: which hand punches.
 func update_pose(allowed: bool, in_fight: bool, punch_t: float, right: bool, blocking: bool, delta: float) -> void:
 	if _arms.is_empty():
 		return
+	_arms[0].visible = true
 	if not allowed:
 		visible = false
 		_visible_time = 0.0

@@ -887,6 +887,31 @@ func walk(phase: float, amount: float) -> void:
 	_head.rotation = Vector3(-0.1 * run, -_upper.rotation.y - _body.rotation.y, 0)
 
 
+## Squatting down (sneaking). `amount` 0..1 = how fast you're creeping.
+func pose_crouch(phase: float, amount: float) -> void:
+	_reset_upper()
+	var s := sin(phase) * 0.3 * minf(1.0, amount * 3.0)
+	_body.position = Vector3(0, -0.4, 0)
+	leg_l.rotation = Vector3(1.25 + s, 0, 0.08)
+	leg_r.rotation = Vector3(1.25 - s, 0, -0.08)
+	shin_l.rotation = Vector3(-2.05 - s * 0.4, 0, 0)
+	shin_r.rotation = Vector3(-2.05 + s * 0.4, 0, 0)
+	_upper.rotation = Vector3(-0.25, 0, 0)
+	_head.rotation = Vector3(0.2, 0, 0)
+	arm_l.rotation = Vector3(0.45, 0, -0.12)
+	arm_r.rotation = Vector3(0.45, 0, 0.12)
+	forearm_l.rotation = Vector3(0.7, 0, 0)
+	forearm_r.rotation = Vector3(0.7, 0, 0)
+
+
+## Cradling something in front of you (on top of walk / crouch). `stroke` moves the right hand.
+func pose_hold(stroke: float) -> void:
+	arm_l.rotation = Vector3(0.55, 0, -0.12)
+	forearm_l.rotation = Vector3(1.35, 0, 0)
+	arm_r.rotation = Vector3(0.75 + stroke, 0, 0.12)
+	forearm_r.rotation = Vector3(1.1 - stroke, 0, 0)
+
+
 ## Standing still: breathing, shifting weight now and then, looking around.
 func _idle() -> void:
 	var t := _clock()

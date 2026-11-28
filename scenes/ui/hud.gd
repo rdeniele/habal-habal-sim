@@ -14,6 +14,9 @@ const MONEY_COLOR := Color("#ffd166")
 const HELP_TEXT := """CONTROLS
 On foot
   WASD  walk      Shift  run
+  Ctrl (hold)  crouch / sneak
+  E  lift or pet a dog / cat
+  1  adopt    2  put down
   Mouse  look     F  get on motor
   E  interact
 On motor
