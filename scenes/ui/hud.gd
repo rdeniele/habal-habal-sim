@@ -48,9 +48,6 @@ var _help_hint: PanelContainer
 var _vehicle_panel: PanelContainer
 var _speed_label: Label
 var _motor_label: Label
-var _fuel_label: Label
-var _fuel_bar: ProgressBar
-var _fuel_fill: StyleBoxFlat
 var _status_label: Label
 var _light_label: Label
 var _health_panel: PanelContainer
@@ -227,9 +224,6 @@ func _ready() -> void:
 	_speed_label = _label(speed_row, "0", 44, Color.WHITE)
 	var unit := _label(speed_row, " km/h", 18, Color(0.8, 0.85, 0.9))
 	unit.size_flags_vertical = Control.SIZE_SHRINK_END
-	_fuel_label = _label(vb, "FUEL", 13, Color(0.8, 0.85, 0.9))
-	_fuel_bar = _bar(vb, ACCENT)
-	_fuel_fill = _fuel_bar.get_theme_stylebox("fill") as StyleBoxFlat
 	_status_label = _label(vb, "", 13, Color("#ffb4a2"))
 	_light_label = _label(vb, "", 15, Color.WHITE)
 	_light_label.visible = false
@@ -501,17 +495,13 @@ func toggle_help() -> void:
 	_help_hint.visible = not _help_panel.visible
 
 
-## liters / tank = gas left and tank size; range_km = how far that gets you.
-func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_name: String, damage: float,
-		liters: float = 0.0, tank: float = 0.0, range_km: float = 0.0) -> void:
+## (Gas is shown by update_gas() in the health panel.)
+func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_name: String, damage: float) -> void:
 	_vehicle_panel.visible = is_shown
 	if not is_shown:
 		return
 	_speed_label.text = str(int(round(speed_kmh)))
 	_motor_label.text = motor_name.to_upper()
-	_fuel_label.text = "GAS  %.1f / %.1f L  ·  %.1f km left" % [liters, tank, range_km]
-	_fuel_bar.value = fuel_ratio * 100.0
-	_fuel_fill.bg_color = Color("#ef476f") if fuel_ratio < 0.2 else ACCENT
 	var status := ""
 	if fuel_ratio <= 0.0:
 		status = "WALA NA GASOLINA! Tulod anay! (Out of gas: push it)"
@@ -522,7 +512,7 @@ func update_vehicle(is_shown: bool, speed_kmh: float, fuel_ratio: float, motor_n
 
 
 ## The gas bar in the health panel: shown whenever you have a motor.
-func update_gas(has_motor: bool, ratio: float, liters: float, range_km: float) -> void:
+func update_gas(has_motor: bool, ratio: float, liters: float, tank: float, range_km: float) -> void:
 	_gas_row.visible = has_motor
 	_gas_text.visible = has_motor
 	if not has_motor:
@@ -530,7 +520,7 @@ func update_gas(has_motor: bool, ratio: float, liters: float, range_km: float) -
 	_gas_bar.value = ratio * 100.0
 	var low := ratio < 0.2
 	_gas_bar.modulate = Color(1.0, 0.45, 0.5) if low else Color.WHITE
-	_gas_text.text = "%.1f L  ·  %.1f km left%s" % [liters, range_km, "  ·  LOW!" if low else ""]
+	_gas_text.text = "%.1f / %.1f L  ·  %.1f km left%s" % [liters, tank, range_km, "  ·  LOW!" if low else ""]
 
 
 ## Health / food / water / energy bars (all 0..1).

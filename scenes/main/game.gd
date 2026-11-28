@@ -1032,9 +1032,8 @@ func _update_hud() -> void:
 	var pose := combat.player_pose()
 	_hands.update_pose(cam.is_first_person() and player.state == Player.State.ON_FOOT and not _ending_day,
 		combat.is_in_combat(), pose["punch_t"], pose["right"], pose["blocking"], get_physics_process_delta_time())
-	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage,
-		motor.fuel_liters, motor.get_tank_liters(), motor.get_range_km())
-	hud.update_gas(motor.is_active, motor.get_fuel_ratio(), motor.fuel_liters, motor.get_range_km())
+	hud.update_vehicle(riding and motor.is_active, motor.get_speed_kmh(), motor.get_fuel_ratio(), motor.get_display_name(), motor.damage)
+	hud.update_gas(motor.is_active, motor.get_fuel_ratio(), motor.fuel_liters, motor.get_tank_liters(), motor.get_range_km())
 	_update_gps()
 
 
