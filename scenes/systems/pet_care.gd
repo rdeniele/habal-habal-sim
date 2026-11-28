@@ -42,7 +42,7 @@ func nearest() -> Animal:
 	if cat != null:
 		around.append(cat)
 	for animal: Animal in around:
-		if not is_instance_valid(animal) or animal == held:
+		if not is_instance_valid(animal) or animal == held or animal.held == "tumble":
 			continue
 		var d := Vector2(animal.global_position.x - player.global_position.x,
 			animal.global_position.z - player.global_position.z).length()
@@ -142,6 +142,27 @@ func put_down() -> void:
 		animals.release(animal, game.player.global_position + forward * 0.8, forward)
 
 
+## Send it flying from `from`; when it has run off, a pet goes home and a stray stays around.
+func _throw(animal: Animal, from: Vector3) -> void:
+	var motor: Motorcycle = game.motor
+	if animal.get_parent() != animals:
+		animal.reparent(animals, false)
+	var yaw: float = motor.heading
+	animal.transform = Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * animal.scale.x), from)
+	var right := Basis(Vector3.UP, yaw).x
+	var launch := -right * 2.4 + motor.get_forward() * 1.5 + Vector3.UP * 4.0
+	animal.ran_off.connect(_on_ran_off.bind(animal), CONNECT_ONE_SHOT)
+	animal.tumble(launch, from.y - 0.9)
+
+
+func _on_ran_off(animal: Animal) -> void:
+	if animal.pet:
+		animals.send_home(animal)
+		game.hud.show_toast("Your %s ran away home." % animal.kind, 3.0)
+	else:
+		animals.release(animal, animal.global_position, -animal.global_basis.z.normalized())
+
+
 ## F while holding one: only your own cat gets to ride.
 func ride_with_held() -> void:
 	if game.player.state != Player.State.ON_FOOT or not game._near_motor():
@@ -192,14 +213,23 @@ func _physics_process(delta: float) -> void:
 	var motor: Motorcycle = game.motor
 	# knocked down, day over, no motor any more: everyone gets to safety
 	var trouble: bool = player.state == Player.State.KNOCKED_DOWN or game._ending_day or game.is_dead
+	# a crash or a hit: whoever is with you goes flying, then runs for it
+	var knocked := player.state == Player.State.KNOCKED_DOWN
+	if held != null and knocked:
+		var dropped := held
+		_let_go()
+		_throw(dropped, player.global_position + Vector3.UP * 0.9)
+	if cat != null and (knocked or motor.is_fallen):
+		var thrown := cat
+		cat = null
+		_throw(thrown, motor.global_position + Vector3.UP * 0.9)
+	# no crash, just over (day end, motor gone): quietly back home
 	if held != null and (trouble or player.state == Player.State.RIDING):
 		put_down()
-	if cat != null and (trouble or not motor.is_active or motor.is_fallen):
-		var scared := cat
+	if cat != null and (trouble or not motor.is_active):
+		var left := cat
 		cat = null
-		animals.send_home(scared)
-		if not game.is_dead:
-			game.hud.show_toast("Your cat jumped off and ran home.", 3.0)
+		animals.send_home(left)
 	if held != null:
 		_stroke_left = maxf(0.0, _stroke_left - delta)
 		player.stroke = sin(_stroke_left * 7.0) * 0.25 if _stroke_left > 0.0 else 0.0

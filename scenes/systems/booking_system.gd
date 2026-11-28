@@ -35,6 +35,12 @@ const EXPECTED_SPEED := 7.0       # m/s used to judge if a trip was "late" (~25 
 const HARD_BRAKE_DECEL := 8.5     # m/s^2 counts as a hard brake
 const HARD_BRAKE_PENALTY := 30.0  # comfort per second of hard braking
 const SCARY_SPEED_KMH := 70.0
+const CRASH_REVIEWS := [
+	"Never again! Halos mapatay ako!  (I almost died!)",
+	"Delikado magmaneho!  (Dangerous driver!)",
+	"Nagdalagan ako pauli. 0 stars kung puwede.  (I ran home. 0 stars if I could.)",
+	"Wala preno si manong!  (Does this rider even brake?)",
+]
 ## How fast each kind of passenger is happy to go (km/h). Late students and nurses on
 ## an emergency want you to hurry; Lola wants you to take it slow. No speed limit fines:
 ## speed is between you and your passenger.
@@ -496,6 +502,12 @@ func on_crash(lethal: bool = false) -> void:
 	_passenger.get_off_and_leave(get_parent(), off + Vector3.UP * 0.05, _nearest_sidewalk(off))
 	_passenger.fall(motor.global_transform.basis.x * 2.0 + motor.get_forward() * 2.5 + Vector3.UP * 3.0, lethal)
 	if not lethal:
+		# they get up, run away from you, and leave a one-star review
+		var away := off - motor.global_position
+		away.y = 0.0
+		var side := _nearest_sidewalk(off)
+		_passenger.run_away(side, side + away.normalized() * 25.0)
+		_passenger.got_up.connect(_post_crash_review.bind(_passenger, str(_request["name"])), CONNECT_ONE_SHOT)
 		_say("complain")
 	_passenger = null
 	GameState.add_rating(1)
@@ -504,6 +516,13 @@ func on_crash(lethal: bool = false) -> void:
 		else "Passenger cancelled the trip!\nNo fare · ★☆☆☆☆", 3.5)
 	_play(Sfx.error())
 	_back_to_searching()
+
+
+## The one-star review, posted once they're back on their feet.
+func _post_crash_review(who: Passenger, passenger_name: String) -> void:
+	who.add_name_tag("\u2605\u2606\u2606\u2606\u2606")
+	hud.show_toast("%s ran away and left a review:\n\u2605\u2606\u2606\u2606\u2606  \"%s\"" % [passenger_name, CRASH_REVIEWS[_rng.randi() % CRASH_REVIEWS.size()]], 5.0)
+	_play(Sfx.error())
 
 
 # --- Drop-off ----------------------------------------------------------------

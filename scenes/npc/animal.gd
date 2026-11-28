@@ -1,5 +1,6 @@
 class_name Animal
 extends Node3D
+signal ran_off          # finished tumbling and running after a crash
 ## A street dog (aspin) or cat. Hangs around its stretch of sidewalk: walks, stands, sits,
 ## lies down, barks or meows now and then, and darts out of the way when you ride close or
 ## honk. They always get away: no collision, nobody hurts them.
@@ -22,6 +23,11 @@ var look_seed := 0              # same seed = same coat (saved for pets)
 var pet := false                # yours: waits at home, never runs from you
 var held := ""                 # "" free, "arms", "board" or "lap"
 var _happy := 0.0               # being petted
+var _vel := Vector3.ZERO        # tumbling after a crash
+var _ground := 0.0
+var _landed := false
+var _down_left := 0.0
+var _run_left := 0.0
 var mood: Mood = Mood.IDLE
 var a := Vector3.ZERO          # the stretch of sidewalk it lives on
 var b := Vector3.ZERO
@@ -143,6 +149,63 @@ func hold_in(parent: Node3D, local: Transform3D, how: String) -> void:
 	mood = Mood.SIT if how == "board" else Mood.LIE
 
 
+## Thrown off in a crash: flies, flops with loose legs, gets up and bolts. Never hurt.
+## Emits `ran_off` when it's gone far enough. Must already be a child of a world-space node.
+func tumble(launch: Vector3, ground: float) -> void:
+	held = "tumble"
+	_vel = launch
+	_ground = ground
+	_landed = false
+	_down_left = 1.0
+	_run_left = 2.2
+	rotation = Vector3(0, rotation.y, 0)
+	reset_physics_interpolation()
+	speak()
+
+
+func _tumble_step(delta: float) -> void:
+	if not _landed:
+		_vel.y -= 14.0 * delta
+		global_position += _vel * delta
+		rotation.x += 9.0 * delta
+		rotation.z += 6.0 * delta
+		_flail(delta, 1.3)
+		if global_position.y <= _ground:
+			global_position.y = _ground
+			if _vel.y < -2.5:       # bounce once
+				_vel = Vector3(_vel.x * 0.5, -_vel.y * 0.35, _vel.z * 0.5)
+			else:
+				_vel.y = 0.0
+				_landed = true
+	elif _down_left > 0.0:
+		_down_left -= delta
+		rotation.x = 0.0
+		rotation.z = PI * 0.5       # flat on its side
+		global_position.y = _ground + (0.08 if kind == "cat" else 0.12)
+		_flail(delta, 0.25)
+	else:
+		var away := Vector3(_vel.x, 0, _vel.z)
+		away = away.normalized() if away.length() > 0.1 else -global_basis.z.normalized()
+		rotation = Vector3(0, atan2(-away.x, -away.z), 0)
+		global_position.y = _ground
+		global_position += away * 5.0 * delta
+		mood = Mood.FLEE
+		_animate(delta, 5.0)
+		_run_left -= delta
+		if _run_left <= 0.0:
+			held = ""
+			ran_off.emit()
+
+
+## Legs, head and tail flapping about.
+func _flail(delta: float, amount: float) -> void:
+	_phase += delta * 17.0
+	for i in 4:
+		_legs[i].rotation.x = sin(_phase + i * 1.9) * amount
+	_head.rotation.x = sin(_phase * 0.7) * amount * 0.5
+	_tail.rotation.y = sin(_phase * 1.3) * amount
+
+
 ## A caress: head up, tail going, a purr or a pant, and a little heart.
 func caress() -> void:
 	_happy = 1.8
@@ -175,6 +238,9 @@ func speak() -> void:
 
 func _physics_process(delta: float) -> void:
 	_happy = maxf(0.0, _happy - delta)
+	if held == "tumble":
+		_tumble_step(delta)
+		return
 	if held != "":
 		_animate(delta, 0.0)
 		return

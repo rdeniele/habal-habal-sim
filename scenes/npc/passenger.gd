@@ -4,10 +4,12 @@ extends Node3D
 ## then gets off and walks away. Movement is simple (no physics) since it's short and slow.
 
 signal reached_motor
+signal got_up          # stood up again after a crash, about to run off
 
 enum State { WAITING, WALKING_TO_MOTOR, READY, ON_BIKE, LEAVING }
 
 const WALK_SPEED := 1.7
+const RUN_SPEED := 4.6
 const LEAVE_TIMEOUT := 8.0
 const JACKETS := ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#f4f1de", "#8338ec", "#fb5607", "#3a86ff"]
 const PANTS := ["#2d3047", "#3d405b", "#6b4f3a", "#1d3557", "#4a4e69"]
@@ -47,6 +49,8 @@ static func random_name(female: bool, rng: RandomNumberGenerator) -> String:
 ## Builds a passenger who looks like their type (kind = personality id, e.g. "lola").
 var _down := 0.0   # > 0 while lying on the ground after a crash
 var dead := false  # died in the crash: stays down, then is cleared away
+var fleeing := false             # running away from you after a crash
+var _then := Vector3.ZERO        # second leg of the escape
 
 func build(rng: RandomNumberGenerator, passenger_name: String, kind: String = "", female: bool = false) -> void:
 	display_name = passenger_name
@@ -97,6 +101,8 @@ func _physics_process(delta: float) -> void:
 				elif _down <= 0.0 and model.is_ragdoll():
 					global_position = model.ragdoll_ground_position()
 					model.stop_ragdoll()
+				if _down <= 0.0:
+					got_up.emit()
 				_t = 0.0
 				return
 			_walk_step(delta)
@@ -111,11 +117,22 @@ func fall(velocity: Vector3, lethal: bool = false) -> void:
 	model.start_ragdoll(velocity, velocity * 0.3 + Vector3.UP)
 
 
+## After a crash: run to `first`, then on to `then` (away from the crazy rider).
+func run_away(first: Vector3, then: Vector3) -> void:
+	fleeing = true
+	_target = first
+	_then = then
+
+
 func _walk_step(delta: float) -> void:
 	var to := _target - global_position
 	to.y = 0.0
 	var dist := to.length()
 	var timed_out := state == State.LEAVING and _t > LEAVE_TIMEOUT
+	if dist < 0.15 and fleeing and _then != Vector3.ZERO:
+		_target = _then
+		_then = Vector3.ZERO
+		return
 	if dist < 0.15 or timed_out:
 		if state == State.WALKING_TO_MOTOR:
 			model.pose_stand()
@@ -124,10 +141,11 @@ func _walk_step(delta: float) -> void:
 		else:
 			queue_free()
 		return
-	global_position += to / dist * minf(dist, WALK_SPEED * delta)
+	var speed := RUN_SPEED if fleeing else WALK_SPEED
+	global_position += to / dist * minf(dist, speed * delta)
 	rotation.y = atan2(-to.x, -to.z)
-	_phase += delta * WALK_SPEED * 2.4
-	model.walk(_phase, 0.6)
+	_phase += delta * speed * (1.9 if fleeing else 2.4)
+	model.walk(_phase, 1.0 if fleeing else 0.6)
 
 
 ## Turn to look at a point (yaw only).
